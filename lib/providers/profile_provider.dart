@@ -1,0 +1,80 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../models/user_model.dart';
+import '../services/firestore_service.dart';
+import '../services/storage_service.dart';
+
+class ProfileProvider extends ChangeNotifier {
+  final FirestoreService _firestoreService = FirestoreService();
+  final StorageService _storageService = StorageService();
+  UserModel? _userProfile;
+  bool _isLoading = false;
+
+  UserModel? get userProfile => _userProfile;
+  bool get isLoading => _isLoading;
+
+  ProfileProvider() {
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null) {
+        loadProfile(user.uid);
+      } else {
+        _userProfile = null;
+        notifyListeners();
+      }
+    });
+  }
+
+  Future<void> loadProfile(String uid) async {
+    _isLoading = true;
+    notifyListeners();
+    try {
+      _userProfile = await _firestoreService.getUser(uid);
+    } catch (e) {
+      debugPrint('Error loading profile: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> updateDisplayName(String name) async {
+    if (_userProfile == null) return;
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await user.updateDisplayName(name);
+      }
+      final updated = _userProfile!.copyWith(displayName: name);
+      await _firestoreService.updateUser(updated);
+      _userProfile = updated;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error updating name: $e');
+    }
+  }
+
+  Future<void> updateProfilePhoto(File imageFile) async {
+    if (_userProfile == null) return;
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final photoUrl = await _storageService.uploadProfilePhoto(_userProfile!.uid, imageFile);
+      
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await user.updatePhotoURL(photoUrl);
+      }
+
+      final updated = _userProfile!.copyWith(photoUrl: photoUrl);
+      await _firestoreService.updateUser(updated);
+      _userProfile = updated;
+    } catch (e) {
+      debugPrint('Error updating photo: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+}

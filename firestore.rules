@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helpers
+    function isAuth()       { return request.auth != null; }
+    function isOwner(uid)   { return isAuth() && request.auth.uid == uid; }
+
+    match /users/{uid} {
+      allow read:   if isAuth();
+      allow write:  if isOwner(uid);
+    }
+    match /places/{placeId} {
+      allow read:   if true;            // Public reads
+      allow write:  if isAuth();        // Any auth user can upsert places
+    }
+    match /crowd_reports/{reportId} {
+      allow read:   if true;
+      allow create: if isAuth()
+                    && request.resource.data.userId == request.auth.uid;
+      allow delete: if isOwner(resource.data.userId);
+    }
+    match /community_photos/{photoId} {
+      allow read:   if true;
+      allow create: if isAuth()
+                    && request.resource.data.userId == request.auth.uid;
+      allow delete: if isOwner(resource.data.userId);
+    }
+    match /reviews/{reviewId} {
+      allow read:   if true;
+      allow create: if isAuth()
+                    && request.resource.data.userId == request.auth.uid;
+    }
+    match /favorites/{favoriteId} {
+      allow read, write: if isOwner(resource.data.userId)
+                         || isOwner(request.resource.data.userId);
+    }
+  }
+}
