@@ -1,0 +1,18 @@
+# CrowdSense Selenium E2E Test Suite — Python Dependencies
+# ============================================================
+# Install with: pip install -r requirements.txt
+
+# ── Core ──────────────────────────────────────────────────
+selenium>=4.20.0
+pytest>=8.0.0
+pytest-html>=4.0.0          # optional: HTML reports with --html=report.html
+
+# ── Excel report generation ───────────────────────────────
+openpyxl>=3.1.0
+
+# ── WebDriver auto-install (Chrome) ───────────────────────
+webdriver-manager>=4.0.0
+
+# ── Utilities ─────────────────────────────────────────────
+pytest-timeout>=2.3.0       # optional: per-test timeout with @pytest.mark.timeout
+colorama>=0.4.6              # optional: colored terminal output on Windows
