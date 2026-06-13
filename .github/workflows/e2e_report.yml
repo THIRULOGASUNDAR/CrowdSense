@@ -5,14 +5,14 @@ name: 📊 CrowdSense E2E Report
 #           and on pull requests targeting main / master.
 #  Goal   : Execute all Selenium tests against the live
 #           GitHub Pages deployment, auto-generate the
-#           multi-sheet .xlsx report, and upload it so it
-#           is available as a downloadable Actions artifact.
+#           multi-sheet .xlsx report, and publish a rich
+#           final analysis summary inside GitHub Actions.
 # ─────────────────────────────────────────────────────────────
 on:
   push:
-    branches: [ "**" ]          # every branch push
+    branches: [ "**" ]
   pull_request:
-    branches: [ main, master ]  # PRs into main / master
+    branches: [ main, master ]
 
 jobs:
   e2e-report:
@@ -32,11 +32,12 @@ jobs:
           cache: "pip"
           cache-dependency-path: tests/selenium_tests/requirements.txt
 
-      # ── 3. Install dependencies ────────────────────────────
+      # ── 3. Install dependencies (+ json reporter) ──────────
       - name: 📦 Install Python Dependencies
         run: |
           pip install --upgrade pip
           pip install -r tests/selenium_tests/requirements.txt
+          pip install pytest-json-report
 
       # ── 4. Install Chrome + ChromeDriver ───────────────────
       - name: 🌐 Install Google Chrome (stable)
@@ -48,15 +49,21 @@ jobs:
       - name: 📁 Create Reports Directory
         run: mkdir -p tests/selenium_tests/reports
 
-      # ── 6. Run all Selenium E2E tests ──────────────────────
+      # ── 6. Capture metadata ────────────────────────────────
+      - name: 🏷️ Capture Run Metadata
+        run: |
+          echo "RUN_TS=$(date +'%Y-%m-%d_%H-%M-%S')"        >> $GITHUB_ENV
+          echo "GIT_SHA=$(echo $GITHUB_SHA | cut -c1-7)"    >> $GITHUB_ENV
+          echo "GIT_BRANCH=${GITHUB_REF_NAME}"              >> $GITHUB_ENV
+
+      # ── 7. Run all Selenium E2E tests ──────────────────────
       #   • Tests run against the LIVE GitHub Pages URL
-      #     (BASE_URL = https://thirulogasundar.github.io/CrowdSense)
-      #   • conftest.py auto-saves the .xlsx report to
-      #     tests/selenium_tests/reports/ on session finish
-      #   • --tb=short shows compact tracebacks in CI logs
-      #   • continue-on-error: true so the report is ALWAYS
-      #     uploaded even if some tests fail
+      #   • --json-report saves machine-readable results for
+      #     the summary script to parse
+      #   • conftest.py auto-saves the .xlsx on session finish
+      #   • continue-on-error: true → report always uploaded
       - name: 🧪 Execute Selenium E2E Tests
+        id: run_tests
         continue-on-error: true
         env:
           DISPLAY: ":99"
@@ -68,24 +75,40 @@ jobs:
             --tb=short \
             --timeout=60 \
             -p no:cacheprovider \
+            --json-report \
+            --json-report-file=tests/selenium_tests/reports/report.json \
             2>&1 | tee tests/selenium_tests/reports/ci_run.log
+          echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
 
-      # ── 7. Generate timestamped report name ────────────────
-      - name: 🕐 Set Report Timestamp
+      # ── 8. Resolve XLSX filename ───────────────────────────
+      - name: 🔍 Resolve XLSX Filename
         if: always()
         run: |
-          echo "RUN_TS=$(date +'%Y-%m-%d_%H-%M-%S')" >> $GITHUB_ENV
-          echo "GIT_SHA=$(echo $GITHUB_SHA | cut -c1-7)"  >> $GITHUB_ENV
-          echo "GIT_BRANCH=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+          XLSX=$(ls tests/selenium_tests/reports/*.xlsx 2>/dev/null | head -1)
+          if [ -n "$XLSX" ]; then
+            echo "XLSX_NAME=$(basename $XLSX)" >> $GITHUB_ENV
+          else
+            echo "XLSX_NAME=not_generated" >> $GITHUB_ENV
+          fi
 
-      # ── 8. List generated reports (debug) ──────────────────
-      - name: 📋 List Generated Reports
+      # ── 9. Write rich GitHub Actions summary ───────────────
+      - name: 📝 Generate Final Analysis Summary
+        if: always()
+        run: |
+          python tests/selenium_tests/generate_gha_summary.py \
+            --json   tests/selenium_tests/reports/report.json \
+            --branch "${{ env.GIT_BRANCH }}" \
+            --sha    "${{ env.GIT_SHA }}" \
+            --xlsx   "${{ env.XLSX_NAME }}"
+
+      # ── 10. List reports (debug) ───────────────────────────
+      - name: 📋 List Generated Report Files
         if: always()
         run: |
           echo "=== Reports Directory ==="
           ls -lh tests/selenium_tests/reports/ || echo "No reports directory found"
 
-      # ── 9. Upload XLSX + log as downloadable artifact ──────
+      # ── 11. Upload XLSX + JSON + log as artifacts ──────────
       - name: 📤 Upload E2E Reports Artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -93,29 +116,7 @@ jobs:
           name: "CrowdSense-E2E-Report_${{ env.GIT_BRANCH }}_${{ env.RUN_TS }}_${{ env.GIT_SHA }}"
           path: |
             tests/selenium_tests/reports/*.xlsx
+            tests/selenium_tests/reports/*.json
             tests/selenium_tests/reports/*.log
           retention-days: 30
           if-no-files-found: warn
-
-      # ── 10. Post summary to GitHub Actions job summary ─────
-      - name: 📝 Write Job Summary
-        if: always()
-        run: |
-          echo "## 📊 CrowdSense E2E Test Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔗 Target URL | https://thirulogasundar.github.io/CrowdSense |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🌿 Branch | \`${{ env.GIT_BRANCH }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🔖 Commit | \`${{ env.GIT_SHA }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🕐 Run Time | \`${{ env.RUN_TS }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| 📂 Framework | Selenium 4 + pytest |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ The **XLSX report** is available in the **Artifacts** section of this workflow run." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          XLSX=$(ls tests/selenium_tests/reports/*.xlsx 2>/dev/null | head -1)
-          if [ -n "$XLSX" ]; then
-            echo "📄 Report file: \`$(basename $XLSX)\`" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ No XLSX file found — check test logs." >> $GITHUB_STEP_SUMMARY
-          fi
