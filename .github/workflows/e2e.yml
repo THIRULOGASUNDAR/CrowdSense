@@ -1,0 +1,79 @@
+name: CrowdSense E2E Testing
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout the repository code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Setup Java Runtime (required by flutter build toolchain)
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      # 3. Setup Flutter SDK
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.11.4'
+
+      # 4. Restore Flutter Dependencies
+      - name: Install Flutter Dependencies
+        run: flutter pub get
+
+      # 5. Build the Flutter Web static files
+      - name: Build Web Application
+        run: flutter build web --release
+
+      # 6. Setup Python Environment
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # 7. Install Selenium, WebDriver, and report writers
+      - name: Install Python Dependencies
+        run: |
+          pip install -r selenium_tests/requirements.txt
+          pip install pytest-html
+
+      # 8. Serve the built web app locally in the background
+      - name: Start Local Web Server
+        run: |
+          python -m http.server 8080 --directory build/web &
+          echo "Waiting for local web server to start on port 8080..."
+          timeout 10 bash -c 'until curl -s http://localhost:8080 > /dev/null; do sleep 1; done'
+
+      # 9. Dynamically patch BASE_URL in conftest.py
+      # Overrides the production URL to target the locally-served built app
+      - name: Patch Test Base URL to Localhost
+        run: |
+          sed -i 's|https://thirulogasundar.github.io/CrowdSense|http://localhost:8080|g' selenium_tests/conftest.py
+
+      # 10. Run Selenium tests under Xvfb (Virtual display server for headless run)
+      - name: Execute Selenium Tests
+        run: |
+          xvfb-run -a pytest selenium_tests/ -v --tb=short --html=selenium_tests/reports/e2e_report.html --self-contained-html
+
+      # 11. Upload generated Excel & HTML reports as artifacts
+      - name: Upload Test Reports
+        if: always() # Uploads the report artifacts even if some tests fail
+        uses: actions/upload-artifact@v4
+        with:
+          name: CrowdSense-E2E-Reports
+          path: |
+            selenium_tests/reports/*.xlsx
+            selenium_tests/reports/*.html

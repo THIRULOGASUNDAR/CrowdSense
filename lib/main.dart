@@ -14,19 +14,24 @@ import 'providers/profile_provider.dart';
 import 'services/fcm_service.dart';
 import 'core/router/app_router.dart';
 
+import 'package:flutter/rendering.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Force Flutter to expose all UI elements to Appium UiAutomator2!
+  RendererBinding.instance.ensureSemantics();
   
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
   
-  // Initialize FCM (Optional, requires configuration in console)
-  try {
-    await FCMService().initialize();
-  } catch (e) {
-    debugPrint('FCM initialization skipped: $e');
-  }
+  // Initialize FCM (Optional, requires configuration in console) - Temporarily disabled for GitHub Pages testing
+  // try {
+  //   await FCMService().initialize();
+  // } catch (e) {
+  //   debugPrint('FCM initialization skipped: $e');
+  // }
   
   runApp(const CrowdSenseApp());
 }
