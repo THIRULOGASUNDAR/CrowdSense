@@ -31,11 +31,11 @@ jobs:
 
       # 4. Restore Flutter Dependencies
       - name: Install Flutter Dependencies
-        run: flutter pub get
+        run: cd frontend && flutter pub get
 
       # 5. Build the Flutter Web static files
       - name: Build Web Application
-        run: flutter build web --release
+        run: cd frontend && flutter build web --release
 
       # 6. Setup Python Environment
       - name: Setup Python
@@ -53,7 +53,7 @@ jobs:
       # 8. Serve the built web app locally in the background
       - name: Start Local Web Server
         run: |
-          python -m http.server 8080 --directory build/web &
+          python -m http.server 8080 --directory frontend/build/web &
           echo "Waiting for local web server to start on port 8080..."
           timeout 10 bash -c 'until curl -s http://localhost:8080 > /dev/null; do sleep 1; done'
 

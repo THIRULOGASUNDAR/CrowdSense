@@ -1,4 +1,4 @@
-# Miscellaneous
+# ── Miscellaneous ────────────────────────────────────────────
 *.class
 *.log
 *.pyc
@@ -12,34 +12,62 @@
 .swiftpm/
 migrate_working_dir/
 
-# IntelliJ related
+# ── IntelliJ / Android Studio ────────────────────────────────
 *.iml
 *.ipr
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
+# ── VS Code (uncomment if you want to ignore) ─────────────────
 #.vscode/
 
-# Flutter/Dart/Pub related
+# ── Flutter / Dart / Pub ─────────────────────────────────────
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+**/flutter-plugins-dependencies
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
+
+# Build output — root level AND inside frontend/
 /build/
+/frontend/build/
+build/
+**/build/
+
 /coverage/
 
-# Symbolication related
+# ── Symbolication & Obfuscation ───────────────────────────────
 app.*.symbols
-
-# Obfuscation related
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# ── Android build artifacts ───────────────────────────────────
 /android/app/debug
 /android/app/profile
 /android/app/release
+frontend/android/app/debug
+frontend/android/app/profile
+frontend/android/app/release
+
+# ── Python / Test artifacts ───────────────────────────────────
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Test reports (auto-generated, do not commit) ─────────────
+tests/selenium_tests/reports/*.xlsx
+tests/selenium_tests/reports/*.log
+e2e_report.html
+*.xlsx
+
+# ── Appium / Node ────────────────────────────────────────────
+node_modules/
+package-lock.json
+appium_server.log
+
+# ── Temp & misc ───────────────────────────────────────────────
+temp_dir/
+automated_test/
