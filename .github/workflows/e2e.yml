@@ -47,7 +47,7 @@ jobs:
       # 7. Install Selenium, WebDriver, and report writers
       - name: Install Python Dependencies
         run: |
-          pip install -r selenium_tests/requirements.txt
+          pip install -r tests/selenium_tests/requirements.txt
           pip install pytest-html
 
       # 8. Serve the built web app locally in the background
@@ -61,12 +61,12 @@ jobs:
       # Overrides the production URL to target the locally-served built app
       - name: Patch Test Base URL to Localhost
         run: |
-          sed -i 's|https://thirulogasundar.github.io/CrowdSense|http://localhost:8080|g' selenium_tests/conftest.py
+          sed -i 's|https://thirulogasundar.github.io/CrowdSense|http://localhost:8080|g' tests/selenium_tests/conftest.py
 
       # 10. Run Selenium tests under Xvfb (Virtual display server for headless run)
       - name: Execute Selenium Tests
         run: |
-          xvfb-run -a pytest selenium_tests/ -v --tb=short --html=selenium_tests/reports/e2e_report.html --self-contained-html
+          xvfb-run -a pytest tests/selenium_tests/ -v --tb=short --html=tests/selenium_tests/reports/e2e_report.html --self-contained-html
 
       # 11. Upload generated Excel & HTML reports as artifacts
       - name: Upload Test Reports
@@ -75,5 +75,5 @@ jobs:
         with:
           name: CrowdSense-E2E-Reports
           path: |
-            selenium_tests/reports/*.xlsx
-            selenium_tests/reports/*.html
+            tests/selenium_tests/reports/*.xlsx
+            tests/selenium_tests/reports/*.html

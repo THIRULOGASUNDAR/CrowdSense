@@ -16,7 +16,7 @@ REM ============================================================
 setlocal
 
 set SCRIPT_DIR=%~dp0
-set TESTS_DIR=%SCRIPT_DIR%selenium_tests
+set TESTS_DIR=%SCRIPT_DIR%tests\selenium_tests
 
 echo.
 echo  =====================================================
