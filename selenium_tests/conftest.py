@@ -102,6 +102,7 @@ _CATEGORY_MAP = {
     "test_12_edge":                     "Edge Cases",
     "test_13_accessibility":            "Accessibility",
     "test_14_smoke":                    "Smoke Tests",
+    "test_15_real_e2e":                 "E2E Integration Journeys",
 }
 
 def _get_category(nodeid: str) -> str:
