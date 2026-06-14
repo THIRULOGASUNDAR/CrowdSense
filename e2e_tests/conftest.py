@@ -5,6 +5,7 @@ CrowdSense E2E Test Configuration (conftest.py)
 - Pytest hooks to auto-generate XLSX report matching the PancreaScan reference format
   Sheets: Summary | Passed Tests | Failed Tests | Execution Log | Test Details
 """
+import os
 import pytest
 import time
 import datetime
@@ -209,11 +210,18 @@ def _write_header(ws, columns):
 @pytest.fixture(scope="module")
 def driver():
     opts = Options()
-    opts.add_argument("--start-maximized")
     opts.add_argument("--disable-notifications")
     opts.add_argument("--disable-infobars")
     opts.add_argument("--log-level=3")
-    # opts.add_argument("--headless=new")   # uncomment for headless mode
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    # Auto-enable headless when running in CI (CI=true set by GitHub Actions)
+    if os.environ.get("CI"):
+        opts.add_argument("--headless=new")
+        opts.add_argument("--window-size=1920,1080")
+    else:
+        opts.add_argument("--start-maximized")
     if USE_WDM:
         service = Service(ChromeDriverManager().install())
     else:

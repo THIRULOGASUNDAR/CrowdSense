@@ -40,7 +40,7 @@ if /i "%1"=="report"   goto :run_report
 goto :run_all
 
 :run_all
-echo  [RUN] Running ALL 240 E2E tests...
+echo  [RUN] Running ALL E2E tests...
 pytest "%TESTS_DIR%" -v --tb=short 2>&1
 echo.
 echo  [DONE] Tests complete. Check selenium_tests\reports\ for XLSX report.
@@ -56,10 +56,11 @@ echo  [RUN] Running Authentication tests only (TC001-TC025)...
 pytest "%TESTS_DIR%\test_01_auth.py" -v --tb=short 2>&1
 goto :end
 
-:run_headless
 echo  [RUN] Running ALL tests in HEADLESS mode...
-REM Temporarily patch headless mode — uncomment --headless in conftest.py for permanent headless
+REM conftest.py auto-enables headless when CI=true is set
+set CI=true
 pytest "%TESTS_DIR%" -v --tb=short 2>&1
+set CI=
 goto :end
 
 :run_report
