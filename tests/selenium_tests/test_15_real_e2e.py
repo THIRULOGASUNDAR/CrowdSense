@@ -17,12 +17,17 @@ from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://thirulogasundar.github.io/CrowdSense"
 
-# Skip authenticated tests in CI — Firebase login requires real credentials
-# that cannot be safely stored in GitHub Actions runners.
-# To run locally: pytest tests/selenium_tests/test_15_real_e2e.py -v
+# Read credentials from environment (GitHub Secrets in CI, or local env / fallback for dev).
+# In CI: set repository secrets TEST_EMAIL and TEST_PASSWORD.
+# Locally: run normally — falls back to defaults below.
+_TEST_EMAIL    = os.environ.get("TEST_EMAIL", "thiru@gmail.com")
+_TEST_PASSWORD = os.environ.get("TEST_PASSWORD", "thiru005")
+
+# Skip only when running in CI without the secrets configured.
+# Once TEST_EMAIL secret is added to the repo, these tests will run in CI.
 pytestmark = pytest.mark.skipif(
-    bool(os.environ.get("CI")),
-    reason="Authenticated E2E tests skipped in CI — requires live Firebase session. Run locally.",
+    bool(os.environ.get("CI")) and not os.environ.get("TEST_EMAIL"),
+    reason="Authenticated E2E tests skipped in CI — add TEST_EMAIL and TEST_PASSWORD as GitHub Secrets to enable.",
 )
 
 
@@ -67,12 +72,12 @@ class TestRealUserE2E:
             EC.presence_of_element_located((By.XPATH, "//input[@aria-label='Enter your email']"))
         )
         email_input.clear()
-        email_input.send_keys("thiru@gmail.com")
+        email_input.send_keys(_TEST_EMAIL)
         time.sleep(1)
 
         password_input = driver.find_element(By.XPATH, "//input[@aria-label='Enter your password']")
         password_input.clear()
-        password_input.send_keys("thiru005")
+        password_input.send_keys(_TEST_PASSWORD)
         time.sleep(1)
 
         # Click Sign In button
