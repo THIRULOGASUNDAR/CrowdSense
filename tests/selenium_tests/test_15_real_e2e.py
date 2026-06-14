@@ -7,6 +7,7 @@ Travel planner, and Logout using semantics navigation on Flutter Web.
 Target: https://thirulogasundar.github.io/CrowdSense
 Credentials: thiru@gmail.com / thiru005
 """
+import os
 import time
 import pytest
 from selenium.webdriver.common.by import By
@@ -15,6 +16,14 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = "https://thirulogasundar.github.io/CrowdSense"
+
+# Skip authenticated tests in CI — Firebase login requires real credentials
+# that cannot be safely stored in GitHub Actions runners.
+# To run locally: pytest tests/selenium_tests/test_15_real_e2e.py -v
+pytestmark = pytest.mark.skipif(
+    bool(os.environ.get("CI")),
+    reason="Authenticated E2E tests skipped in CI — requires live Firebase session. Run locally.",
+)
 
 
 def _enable_semantics(driver):

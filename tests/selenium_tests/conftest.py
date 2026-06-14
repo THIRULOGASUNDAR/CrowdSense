@@ -468,14 +468,22 @@ def _write_category_sheet(ws):
 def driver():
     """Module-scoped Chrome WebDriver (shared across all tests in a module)."""
     opts = Options()
-    opts.add_argument("--start-maximized")
     opts.add_argument("--disable-notifications")
     opts.add_argument("--disable-infobars")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--log-level=3")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--remote-debugging-port=9222")
     opts.add_experimental_option("excludeSwitches", ["enable-logging"])
-    # opts.add_argument("--headless=new")  # uncomment to run headless
+
+    # Auto-enable headless mode in CI (GitHub Actions sets CI=true).
+    # Locally, Chrome opens a real window for easy debugging.
+    if os.environ.get("CI"):
+        opts.add_argument("--headless=new")
+        opts.add_argument("--window-size=1920,1080")
+    else:
+        opts.add_argument("--start-maximized")
 
     if _USE_WDM:
         service = Service(ChromeDriverManager().install())

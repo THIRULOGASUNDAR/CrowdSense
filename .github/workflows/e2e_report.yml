@@ -32,12 +32,12 @@ jobs:
           cache: "pip"
           cache-dependency-path: tests/selenium_tests/requirements.txt
 
-      # ── 3. Install dependencies (+ json reporter) ──────────
+      # ── 3. Install dependencies ────────────────────────────
+      #   pytest-json-report is now listed in requirements.txt
       - name: 📦 Install Python Dependencies
         run: |
           pip install --upgrade pip
           pip install -r tests/selenium_tests/requirements.txt
-          pip install pytest-json-report
 
       # ── 4. Install Chrome + ChromeDriver ───────────────────
       - name: 🌐 Install Google Chrome (stable)
@@ -57,7 +57,9 @@ jobs:
           echo "GIT_BRANCH=${GITHUB_REF_NAME}"              >> $GITHUB_ENV
 
       # ── 7. Run all Selenium E2E tests ──────────────────────
-      #   • Tests run against the LIVE GitHub Pages URL
+      #   • Xvfb provides a virtual display (belt-and-suspenders
+      #     alongside --headless=new which conftest.py enables
+      #     automatically when CI=true)
       #   • --json-report saves machine-readable results for
       #     the summary script to parse
       #   • conftest.py auto-saves the .xlsx on session finish
@@ -67,9 +69,10 @@ jobs:
         continue-on-error: true
         env:
           DISPLAY: ":99"
+          CI: "true"
         run: |
           Xvfb :99 -screen 0 1920x1080x24 &
-          sleep 2
+          sleep 4
           pytest tests/selenium_tests/ \
             -v \
             --tb=short \

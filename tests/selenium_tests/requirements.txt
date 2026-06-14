@@ -15,4 +15,5 @@ webdriver-manager>=4.0.0
 
 # ── Utilities ─────────────────────────────────────────────
 pytest-timeout>=2.3.0       # optional: per-test timeout with @pytest.mark.timeout
+pytest-json-report>=1.5.0   # required: machine-readable JSON report for GHA summary
 colorama>=0.4.6              # optional: colored terminal output on Windows
