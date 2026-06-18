@@ -207,15 +207,10 @@ def write_summary(args: argparse.Namespace, stats: dict) -> None:
     # FOOTER
     # ═══════════════════════════════════════════════════════════
     w("## 📥 Download Report\n\n")
-    w("The full multi-sheet **Excel (.xlsx) report** is available in the ")
+    w("The full **Excel (.xlsx) report** is available in the ")
     w("**Artifacts** section at the bottom of this workflow run page.\n\n")
     w("It contains:\n")
-    w("- 📋 **Summary** sheet — overall stats\n")
-    w("- ✅ **Passed Tests** sheet\n")
-    w("- ❌ **Failed Tests** sheet with full error traces\n")
-    w("- ⚠️ **Skipped Tests** sheet\n")
-    w("- 📒 **Execution Log** — chronological test log\n")
-    w("- 📊 **Category Stats** — pivot by feature area\n\n")
+    w("- 📋 **Test Cases** sheet — single-sheet workbook containing all executed test cases, category tags, statuses, durations, and traceback error logs.\n\n")
     w("---\n")
     w("*Generated automatically by CrowdSense Selenium E2E Suite*\n")
 

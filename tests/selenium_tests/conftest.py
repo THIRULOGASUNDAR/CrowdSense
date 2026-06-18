@@ -150,316 +150,80 @@ def pytest_sessionfinish(session, exitstatus):
 
 # ─── XLSX Report Generator ────────────────────────────────────────────────────
 def _generate_xlsx_report():
-    """Build and save the multi-sheet Excel report."""
+    """Build and save a single-sheet Excel E2E test report."""
     suite_end = datetime.datetime.now()
-
-    passed  = [r for r in _results if r["status"] == "PASSED"]
-    failed  = [r for r in _results if r["status"] == "FAILED"]
-    skipped = [r for r in _results if r["status"] == "SKIPPED"]
-    total   = len(_results)
-    pass_rate = round(len(passed) / total * 100, 2) if total else 0
-    total_dur = sum(r["duration"] for r in _results)
-
     wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Test Cases"
+    
+    # ── Title banner ──
+    ws.merge_cells("A1:H1")
+    t = ws["A1"]
+    t.value     = "CrowdSense — E2E Test Cases & Results (Web)"
+    t.font      = _font(bold=True, size=16)
+    t.fill      = HDR_FILL
+    t.alignment = CENTER
+    ws.row_dimensions[1].height = 40
 
-    # ── Sheet 1: Summary ──────────────────────────────────────────────────────
-    ws1 = wb.active
-    ws1.title = "Summary"
-    _write_summary_sheet(ws1, total, len(passed), len(failed), len(skipped),
-                         pass_rate, total_dur, suite_end)
+    # ── Metadata subtitle ──
+    ws.merge_cells("A2:H2")
+    sub = ws["A2"]
+    sub.value     = (f"Base URL: https://thirulogasundar.github.io/CrowdSense  |  "
+                     f"Framework: Selenium 4 + pytest  |  "
+                     f"Generated: {suite_end.strftime('%Y-%m-%d %H:%M:%S')}")
+    sub.font      = _font(size=10)
+    sub.fill      = SUBHDR_FILL
+    sub.alignment = CENTER
+    ws.row_dimensions[2].height = 20
 
-    # ── Sheet 2: Passed Tests ─────────────────────────────────────────────────
-    ws2 = wb.create_sheet("Passed Tests")
-    _write_status_sheet(ws2, passed, "PASSED", PASS_FILL)
+    # Spacer
+    ws.row_dimensions[3].height = 10
 
-    # ── Sheet 3: Failed Tests ─────────────────────────────────────────────────
-    ws3 = wb.create_sheet("Failed Tests")
-    _write_failed_sheet(ws3, failed)
-
-    # ── Sheet 4: Skipped Tests ────────────────────────────────────────────────
-    ws4 = wb.create_sheet("Skipped Tests")
-    _write_status_sheet(ws4, skipped, "SKIPPED", SKIP_FILL)
-
-    # ── Sheet 5: Execution Log ────────────────────────────────────────────────
-    ws5 = wb.create_sheet("Execution Log")
-    _write_log_sheet(ws5)
-
-    # ── Sheet 6: Test Details (all tests) ─────────────────────────────────────
-    ws6 = wb.create_sheet("Test Details")
-    _write_details_sheet(ws6)
-
-    # ── Sheet 7: Category Stats ───────────────────────────────────────────────
-    ws7 = wb.create_sheet("Category Stats")
-    _write_category_sheet(ws7)
-
-    ts    = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    fname = os.path.join(REPORT_DIR, f"CrowdSense_E2E_Report_{ts}.xlsx")
-    wb.save(fname)
-    print(f"\n{'='*60}")
-    print(f"  [REPORT SAVED] {fname}")
-    print(f"{'='*60}\n")
-
-
-# ─── Individual Sheet Writers ─────────────────────────────────────────────────
-
-def _hdr_row(ws, columns: list[str], row: int = 1):
-    """Write a bold navy header row and auto-set height."""
-    for col_idx, hdr in enumerate(columns, start=1):
-        c = ws.cell(row=row, column=col_idx, value=hdr)
+    # Headers
+    headers = ["No.", "Category", "Module", "Test Case Name", "Status", "Duration (s)", "Error Details", "Timestamp"]
+    for col_idx, hdr in enumerate(headers, start=1):
+        c = ws.cell(row=4, column=col_idx, value=hdr)
         c.font      = WHITE_HDR
         c.fill      = HDR_FILL
         c.border    = THIN_BORDER
         c.alignment = CENTER
-    ws.row_dimensions[row].height = 28
+    ws.row_dimensions[4].height = 26
 
+    # Write test cases
+    for idx, r in enumerate(_results, start=5):
+        vals = [r["no"], r["category"], r["module"], r["name"], r["status"], r["duration"], r["error"], r["ts"]]
+        fill = (PASS_FILL if r["status"] == "PASSED" 
+                else FAIL_FILL if r["status"] == "FAILED" 
+                else SKIP_FILL)
+        
+        for c_idx, val in enumerate(vals, start=1):
+            c = ws.cell(row=idx, column=c_idx, value=val)
+            c.font = NORMAL
+            c.border = THIN_BORDER
+            c.alignment = LEFT if c_idx in (2, 3, 4, 7) else CENTER
+            if c_idx == 5:
+                c.fill = fill
+                c.font = BOLD
+                if r["status"] == "PASSED":
+                    c.font = _font(color="276221", bold=True, size=10)
+                elif r["status"] == "FAILED":
+                    c.font = _font(color="9C0006", bold=True, size=10)
+                else:
+                    c.font = _font(color="7D6608", bold=True, size=10)
 
-def _set_col_widths(ws, widths: list[int]):
+        ws.row_dimensions[idx].height = 20
+
+    # Column widths
+    widths = [6, 24, 28, 60, 12, 14, 80, 22]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
 
-
-def _write_summary_sheet(ws, total, passed, failed, skipped,
-                          pass_rate, total_dur, suite_end):
-    # ── Title banner ──
-    ws.merge_cells("A1:H1")
-    t = ws["A1"]
-    t.value     = "CrowdSense — End-to-End Selenium Test Report"
-    t.font      = _font(bold=True, size=18)
-    t.fill      = HDR_FILL
-    t.alignment = CENTER
-    ws.row_dimensions[1].height = 50
-
-    # ── App info ──
-    ws.merge_cells("A2:H2")
-    sub = ws["A2"]
-    sub.value     = (f"Application: CrowdSense Web App  |  "
-                     f"URL: https://thirulogasundar.github.io/CrowdSense  |  "
-                     f"Framework: Selenium 4 + pytest  |  "
-                     f"Generated: {suite_end.strftime('%Y-%m-%d %H:%M:%S')}")
-    sub.font      = _font(size=9)
-    sub.fill      = _fill(_BLUE)
-    sub.alignment = CENTER
-    ws.row_dimensions[2].height = 18
-
-    # ── Stats cards ──
-    ws.row_dimensions[3].height = 12  # spacer
-
-    stat_data = [
-        ("Total Tests",   total,      _fill("2E75B6"), _font(bold=True, size=14)),
-        ("✅ Passed",      passed,     PASS_FILL,       _font(color="276221", bold=True, size=14)),
-        ("❌ Failed",      failed,     FAIL_FILL,       _font(color="9C0006", bold=True, size=14)),
-        ("⚠️ Skipped",    skipped,    SKIP_FILL,       _font(color="7D6608", bold=True, size=14)),
-        ("Pass Rate",      f"{pass_rate}%", _fill("D9E2F3"), _font(color="1F3864", bold=True, size=14)),
-        ("Duration (s)",  round(total_dur, 2), _fill("D9E2F3"), _font(color="1F3864", bold=True, size=14)),
-    ]
-    ws.row_dimensions[4].height = 22
-    ws.row_dimensions[5].height = 38
-
-    for col_idx, (label, value, fill, font) in enumerate(stat_data, start=1):
-        lc = ws.cell(row=4, column=col_idx, value=label)
-        lc.font = _font(color="000000", bold=True, size=10)
-        lc.fill = fill
-        lc.alignment = CENTER
-        lc.border = THIN_BORDER
-
-        vc = ws.cell(row=5, column=col_idx, value=value)
-        vc.font = font
-        vc.fill = fill
-        vc.alignment = CENTER
-        vc.border = THIN_BORDER
-
-    # ── Info table ──
-    ws.row_dimensions[6].height = 12  # spacer
-    info_headers = ["Property", "Value"]
-    _hdr_row(ws, info_headers, row=7)
-    info_rows = [
-        ("Application",       "CrowdSense"),
-        ("Type",              "Flutter Web App"),
-        ("Test Framework",    "Selenium 4 + pytest"),
-        ("Environment",       "Production — GitHub Pages"),
-        ("Base URL",          "https://thirulogasundar.github.io/CrowdSense"),
-        ("Total Tests Run",   str(total)),
-        ("Passed",            str(passed)),
-        ("Failed",            str(failed)),
-        ("Skipped",           str(skipped)),
-        ("Pass Rate",         f"{pass_rate}%"),
-        ("Total Duration",    f"{round(total_dur, 2)} seconds"),
-        ("Suite Start",       _suite_start.strftime("%Y-%m-%d %H:%M:%S") if _suite_start else "—"),
-        ("Suite End",         suite_end.strftime("%Y-%m-%d %H:%M:%S")),
-        ("Prepared By",       "CrowdSense Automated Test Suite"),
-        ("Report Version",    "v2.0"),
-    ]
-    for r_idx, (k, v) in enumerate(info_rows, start=8):
-        fill = ALT_FILL if r_idx % 2 == 0 else None
-        for col, val in [(1, k), (2, v)]:
-            c = ws.cell(row=r_idx, column=col, value=val)
-            c.font = BOLD if col == 1 else NORMAL
-            c.border = THIN_BORDER
-            c.alignment = LEFT
-            if fill:
-                c.fill = fill
-        ws.row_dimensions[r_idx].height = 18
-
-    _set_col_widths(ws, [20, 20, 20, 20, 20, 20, 10, 10])
-
-
-def _write_status_sheet(ws, rows: list[dict], status: str, fill):
-    title_map = {
-        "PASSED":  "✅ Passed Tests",
-        "SKIPPED": "⚠️ Skipped Tests",
-    }
-    ws.merge_cells("A1:F1")
-    t = ws["A1"]
-    t.value     = f"CrowdSense E2E — {title_map.get(status, status)}"
-    t.font      = _font(bold=True, size=14)
-    t.fill      = HDR_FILL
-    t.alignment = CENTER
-    ws.row_dimensions[1].height = 36
-
-    cols = ["No.", "Category", "Module", "Test Name", "Duration (s)", "Status"]
-    _hdr_row(ws, cols, row=2)
-
-    for r_idx, r in enumerate(rows, start=3):
-        vals = [r["no"], r["category"], r["module"], r["name"], r["duration"], r["status"]]
-        for c_idx, val in enumerate(vals, start=1):
-            c = ws.cell(row=r_idx, column=c_idx, value=val)
-            c.font      = NORMAL
-            c.fill      = fill
-            c.border    = THIN_BORDER
-            c.alignment = LEFT
-        ws.row_dimensions[r_idx].height = 18
-
-    _set_col_widths(ws, [6, 24, 32, 70, 14, 12])
-    ws.freeze_panes = "A3"
-
-
-def _write_failed_sheet(ws, rows: list[dict]):
-    ws.merge_cells("A1:G1")
-    t = ws["A1"]
-    t.value     = "CrowdSense E2E — ❌ Failed Tests"
-    t.font      = _font(bold=True, size=14)
-    t.fill      = _fill("C00000")
-    t.alignment = CENTER
-    ws.row_dimensions[1].height = 36
-
-    cols = ["No.", "Category", "Module", "Test Name", "Error / Traceback", "Duration (s)", "Timestamp"]
-    _hdr_row(ws, cols, row=2)
-
-    for r_idx, r in enumerate(rows, start=3):
-        vals = [r["no"], r["category"], r["module"], r["name"],
-                r["error"], r["duration"], r["ts"]]
-        for c_idx, val in enumerate(vals, start=1):
-            c = ws.cell(row=r_idx, column=c_idx, value=val)
-            c.font      = NORMAL
-            c.fill      = FAIL_FILL
-            c.border    = THIN_BORDER
-            c.alignment = LEFT
-        ws.row_dimensions[r_idx].height = 55  # taller for error details
-
-    _set_col_widths(ws, [6, 24, 32, 60, 90, 14, 22])
-    ws.freeze_panes = "A3"
-
-
-def _write_log_sheet(ws):
-    ws.merge_cells("A1:D1")
-    t = ws["A1"]
-    t.value     = "CrowdSense E2E — Chronological Execution Log"
-    t.font      = _font(bold=True, size=14)
-    t.fill      = HDR_FILL
-    t.alignment = CENTER
-    ws.row_dimensions[1].height = 36
-
-    _hdr_row(ws, ["Timestamp", "Level", "Category", "Message"], row=2)
-
-    for r_idx, r in enumerate(_results, start=3):
-        level = "INFO" if r["status"] == "PASSED" else ("WARN" if r["status"] == "SKIPPED" else "ERROR")
-        fill  = PASS_FILL if r["status"] == "PASSED" else (SKIP_FILL if r["status"] == "SKIPPED" else FAIL_FILL)
-        msg   = f"[{r['name']}] → {r['status']} in {r['duration']}s"
-        if r["status"] == "FAILED":
-            msg += f" | Error: {r['error'][:200]}"
-
-        for c_idx, val in enumerate([r["ts"], level, r["category"], msg], start=1):
-            c = ws.cell(row=r_idx, column=c_idx, value=val)
-            c.font   = NORMAL
-            c.fill   = fill
-            c.border = THIN_BORDER
-            c.alignment = LEFT
-        ws.row_dimensions[r_idx].height = 18
-
-    _set_col_widths(ws, [22, 10, 26, 110])
-    ws.freeze_panes = "A3"
-
-
-def _write_details_sheet(ws):
-    ws.merge_cells("A1:I1")
-    t = ws["A1"]
-    t.value     = "CrowdSense E2E — Complete Test Details"
-    t.font      = _font(bold=True, size=14)
-    t.fill      = HDR_FILL
-    t.alignment = CENTER
-    ws.row_dimensions[1].height = 36
-
-    cols = ["No.", "Category", "Module", "Test Name", "Status",
-            "Duration (s)", "Error / Details", "Timestamp", "Node ID"]
-    _hdr_row(ws, cols, row=2)
-
-    for r_idx, r in enumerate(_results, start=3):
-        fill = (PASS_FILL if r["status"] == "PASSED"
-                else FAIL_FILL if r["status"] == "FAILED"
-                else SKIP_FILL)
-        vals = [r["no"], r["category"], r["module"], r["name"], r["status"],
-                r["duration"], r["error"], r["ts"], r["nodeid"]]
-        for c_idx, val in enumerate(vals, start=1):
-            c = ws.cell(row=r_idx, column=c_idx, value=val)
-            c.font      = NORMAL
-            c.fill      = fill
-            c.border    = THIN_BORDER
-            c.alignment = LEFT
-        ws.row_dimensions[r_idx].height = 22
-
-    _set_col_widths(ws, [6, 24, 32, 68, 12, 14, 80, 22, 80])
-    ws.freeze_panes = "A3"
-    ws.auto_filter.ref = f"A2:I{len(_results) + 2}"
-
-
-def _write_category_sheet(ws):
-    ws.merge_cells("A1:F1")
-    t = ws["A1"]
-    t.value     = "CrowdSense E2E — Category-wise Test Statistics"
-    t.font      = _font(bold=True, size=14)
-    t.fill      = HDR_FILL
-    t.alignment = CENTER
-    ws.row_dimensions[1].height = 36
-
-    cols = ["Category", "Total", "Passed", "Failed", "Skipped", "Pass Rate %"]
-    _hdr_row(ws, cols, row=2)
-
-    # Build per-category pivot
-    cat_data: dict[str, dict] = {}
-    for r in _results:
-        cat = r["category"]
-        if cat not in cat_data:
-            cat_data[cat] = {"total": 0, "passed": 0, "failed": 0, "skipped": 0}
-        cat_data[cat]["total"]   += 1
-        cat_data[cat][r["status"].lower()] += 1
-
-    for r_idx, (cat, data) in enumerate(sorted(cat_data.items()), start=3):
-        total   = data["total"]
-        passed  = data["passed"]
-        failed  = data["failed"]
-        skipped = data["skipped"]
-        rate    = f"{round(passed / total * 100, 1)}%" if total else "0%"
-        fill    = PASS_FILL if failed == 0 else (FAIL_FILL if passed == 0 else SKIP_FILL)
-
-        for c_idx, val in enumerate([cat, total, passed, failed, skipped, rate], start=1):
-            c = ws.cell(row=r_idx, column=c_idx, value=val)
-            c.font      = NORMAL
-            c.fill      = fill
-            c.border    = THIN_BORDER
-            c.alignment = LEFT if c_idx == 1 else CENTER
-        ws.row_dimensions[r_idx].height = 20
-
-    _set_col_widths(ws, [32, 10, 10, 10, 10, 14])
+    ws.freeze_panes = "A5"
+    
+    ts = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    fname = os.path.join(REPORT_DIR, f"CrowdSense_E2E_Report_{ts}.xlsx")
+    wb.save(fname)
+    print(f"\n[REPORT SAVED] {fname}\n")
 
 
 # ─── Selenium WebDriver Fixture ───────────────────────────────────────────────

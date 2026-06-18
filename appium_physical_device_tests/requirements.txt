@@ -1,0 +1,16 @@
+# CrowdSense Physical Device Appium E2E — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Appium Python client (Appium 2.x compatible)
+Appium-Python-Client>=3.1.0
+
+# Testing framework
+pytest>=7.4.0
+pytest-html>=4.0.0
+pytest-timeout>=2.2.0
+
+# Excel report generation
+openpyxl>=3.1.2
+
+# Selenium base (required by Appium client)
+selenium>=4.0.0,<5.0.0

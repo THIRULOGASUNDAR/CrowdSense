@@ -2,8 +2,9 @@
 """
 compile_report.py
 =================
-Parses the E2E Excel report (.xlsx) and generates a premium, responsive,
-and interactive HTML report dashboard.
+Parses the single-sheet E2E Excel report ("Test Cases") and generates a 
+premium, responsive, and interactive HTML report dashboard.
+Supports both Web (Selenium) and Mobile (Appium) report structures.
 """
 from __future__ import annotations
 
@@ -16,12 +17,20 @@ import openpyxl
 
 def find_latest_excel_report(reports_dir: str) -> str | None:
     """Find the most recently created Excel report in the directory."""
-    pattern = os.path.join(reports_dir, "CrowdSense_E2E_Report_*.xlsx")
-    files = glob.glob(pattern)
+    patterns = [
+        os.path.join(reports_dir, "CrowdSense_E2E_Report_*.xlsx"),
+        os.path.join(reports_dir, "Appium_E2E_Report_CrowdSense_*.xlsx"),
+        os.path.join(reports_dir, "Physical_Device_E2E_Report_*.xlsx"),
+    ]
+    files = []
+    for pattern in patterns:
+        files.extend(glob.glob(pattern))
+    
     if not files:
-        # Fallback to any .xlsx in the directory
-        pattern_fallback = os.path.join(reports_dir, "*.xlsx")
-        files = glob.glob(pattern_fallback)
+        # Fallback to any .xlsx in the directory or parent
+        files.extend(glob.glob(os.path.join(reports_dir, "*.xlsx")))
+        files.extend(glob.glob(os.path.join(os.path.dirname(reports_dir), "*.xlsx")))
+    
     if not files:
         return None
     # Sort by modification time
@@ -29,104 +38,161 @@ def find_latest_excel_report(reports_dir: str) -> str | None:
     return files[0]
 
 def parse_excel_report(excel_path: str) -> dict:
-    """Parse Excel sheets into Python dictionaries and lists."""
+    """Parse the single-sheet Excel report into Python dictionaries and lists."""
     print(f"[INFO] Loading Excel report: {excel_path}")
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     
-    # 1. Parse Summary
-    ws_summary = wb["Summary"]
-    summary_data = {
-        "total": int(ws_summary["A5"].value or 0),
-        "passed": int(ws_summary["B5"].value or 0),
-        "failed": int(ws_summary["C5"].value or 0),
-        "skipped": int(ws_summary["D5"].value or 0),
-        "pass_rate": str(ws_summary["E5"].value or "0%"),
-        "duration": str(ws_summary["F5"].value or "0"),
-        "metadata": {}
-    }
+    # Look for "Test Cases" sheet
+    sheet_name = "Test Cases"
+    if sheet_name not in wb.sheetnames:
+        # Fallback to active sheet
+        sheet_name = wb.sheetnames[0]
+        
+    ws = wb[sheet_name]
     
-    # Read property-value rows from Row 8 onwards
-    for r in range(8, ws_summary.max_row + 1):
-        prop = ws_summary.cell(row=r, column=1).value
-        val = ws_summary.cell(row=r, column=2).value
-        if prop:
-            summary_data["metadata"][str(prop).strip()] = str(val or "").strip()
+    # Parse title & metadata from rows 1-2
+    title_val = ws["A1"].value or "CrowdSense E2E Testing Report"
+    subtitle_val = ws["A2"].value or ""
+    
+    # Parse headers from row 4
+    col_map = {}
+    for col in range(1, ws.max_column + 1):
+        val = ws.cell(row=4, column=col).value
+        if val:
+            col_map[str(val).strip()] = col
 
-    # 2. Parse Category Stats
+    no_col = col_map.get("No.", 1)
+    cat_col = col_map.get("Category", 2)
+    mod_col = col_map.get("Module")
+    name_col = col_map.get("Test Case Name") or col_map.get("Test Name") or 3
+    status_col = col_map.get("Status", 4)
+    dur_col = col_map.get("Duration (s)", 5)
+    err_col = col_map.get("Error Details", 6)
+    ts_col = col_map.get("Timestamp", 7)
+
+    # Parse rows starting from row 5
+    tests = []
+    failures = []
+    categories_dict = {}
+    total_duration = 0.0
+    passed_count = 0
+    failed_count = 0
+    skipped_count = 0
+    
+    # Store clean property list for metadata display
+    metadata = {}
+    if subtitle_val:
+        parts = subtitle_val.split("|")
+        for part in parts:
+            if ":" in part:
+                k, v = part.split(":", 1)
+                metadata[k.strip()] = v.strip()
+            elif "Generated" in part:
+                metadata["Generated"] = part.replace("Generated", "").strip()
+
+    # If parsing appium physical report metadata
+    if "Device" in metadata:
+        metadata["Platform"] = "Android (UiAutomator2)"
+
+    for r in range(5, ws.max_row + 1):
+        no_val = ws.cell(row=r, column=no_col).value
+        if no_val is None:
+            continue
+            
+        no = int(no_val)
+        cat = str(ws.cell(row=r, column=cat_col).value or "General").strip()
+        module = str(ws.cell(row=r, column=mod_col).value or "").strip() if mod_col else ""
+        name = str(ws.cell(row=r, column=name_col).value or "").strip()
+        status = str(ws.cell(row=r, column=status_col).value or "PENDING").upper().strip()
+        
+        try:
+            dur = float(ws.cell(row=r, column=dur_col).value or 0.0)
+        except ValueError:
+            dur = 0.0
+            
+        error = str(ws.cell(row=r, column=err_col).value or "—").strip()
+        ts = str(ws.cell(row=r, column=ts_col).value or "").strip()
+        
+        total_duration += dur
+        
+        test_case = {
+            "no": no,
+            "category": cat,
+            "module": module,
+            "name": name,
+            "status": status,
+            "duration": dur,
+            "error": error,
+            "timestamp": ts
+        }
+        
+        tests.append(test_case)
+        
+        if status in ("FAILED", "ERROR"):
+            failed_count += 1
+            failures.append(test_case)
+        elif status == "PASSED":
+            passed_count += 1
+        elif status == "SKIPPED":
+            skipped_count += 1
+            
+        # Category breakdown aggregation
+        if cat not in categories_dict:
+            categories_dict[cat] = {"total": 0, "passed": 0, "failed": 0, "skipped": 0}
+        categories_dict[cat]["total"] += 1
+        if status == "PASSED":
+            categories_dict[cat]["passed"] += 1
+        elif status in ("FAILED", "ERROR"):
+            categories_dict[cat]["failed"] += 1
+        else:
+            categories_dict[cat]["skipped"] += 1
+
+    total_count = len(tests)
+    pass_rate_val = round(passed_count / total_count * 100, 1) if total_count else 0.0
+    
+    # Sort categories alphabetically
     category_stats = []
-    if "Category Stats" in wb.sheetnames:
-        ws_cats = wb["Category Stats"]
-        for r in range(3, ws_cats.max_row + 1):
-            cat_name = ws_cats.cell(row=r, column=1).value
-            if not cat_name:
-                continue
-            category_stats.append({
-                "category": str(cat_name),
-                "total": int(ws_cats.cell(row=r, column=2).value or 0),
-                "passed": int(ws_cats.cell(row=r, column=3).value or 0),
-                "failed": int(ws_cats.cell(row=r, column=4).value or 0),
-                "skipped": int(ws_cats.cell(row=r, column=5).value or 0),
-                "pass_rate": str(ws_cats.cell(row=r, column=6).value or "0%"),
-            })
+    for cat_name, stats in sorted(categories_dict.items()):
+        c_rate = round(stats["passed"] / stats["total"] * 100, 1) if stats["total"] else 0.0
+        category_stats.append({
+            "category": cat_name,
+            "total": stats["total"],
+            "passed": stats["passed"],
+            "failed": stats["failed"],
+            "skipped": stats["skipped"],
+            "pass_rate": f"{c_rate}%"
+        })
 
-    # 3. Parse Test Details
-    test_details = []
-    if "Test Details" in wb.sheetnames:
-        ws_details = wb["Test Details"]
-        for r in range(3, ws_details.max_row + 1):
-            no = ws_details.cell(row=r, column=1).value
-            if no is None:
-                continue
-            test_details.append({
-                "no": int(no),
-                "category": str(ws_details.cell(row=r, column=2).value or "General"),
-                "module": str(ws_details.cell(row=r, column=3).value or ""),
-                "name": str(ws_details.cell(row=r, column=4).value or ""),
-                "status": str(ws_details.cell(row=r, column=5).value or "PENDING"),
-                "duration": float(ws_details.cell(row=r, column=6).value or 0.0),
-                "error": str(ws_details.cell(row=r, column=7).value or "—"),
-                "timestamp": str(ws_details.cell(row=r, column=8).value or ""),
-                "nodeid": str(ws_details.cell(row=r, column=9).value or ""),
-            })
+    summary_data = {
+        "title": title_val,
+        "total": total_count,
+        "passed": passed_count,
+        "failed": failed_count,
+        "skipped": skipped_count,
+        "pass_rate": f"{pass_rate_val}%",
+        "duration": f"{round(total_duration, 2)}s",
+        "metadata": metadata
+    }
 
-    # 4. Parse Failed Tests
-    failed_tests = []
-    if "Failed Tests" in wb.sheetnames:
-        ws_failed = wb["Failed Tests"]
-        for r in range(3, ws_failed.max_row + 1):
-            no = ws_failed.cell(row=r, column=1).value
-            if no is None:
-                continue
-            failed_tests.append({
-                "no": int(no),
-                "category": str(ws_failed.cell(row=r, column=2).value or "General"),
-                "module": str(ws_failed.cell(row=r, column=3).value or ""),
-                "name": str(ws_failed.cell(row=r, column=4).value or ""),
-                "error": str(ws_failed.cell(row=r, column=5).value or ""),
-                "duration": float(ws_failed.cell(row=r, column=6).value or 0.0),
-                "timestamp": str(ws_failed.cell(row=r, column=7).value or ""),
-            })
-
-    # 5. Parse Execution Log
+    # Construct mock execution logs out of test cases
     execution_logs = []
-    if "Execution Log" in wb.sheetnames:
-        ws_log = wb["Execution Log"]
-        for r in range(3, ws_log.max_row + 1):
-            ts = ws_log.cell(row=r, column=1).value
-            if not ts:
-                continue
-            execution_logs.append({
-                "timestamp": str(ts),
-                "level": str(ws_log.cell(row=r, column=2).value or "INFO"),
-                "category": str(ws_log.cell(row=r, column=3).value or "General"),
-                "message": str(ws_log.cell(row=r, column=4).value or ""),
-            })
+    for t in tests:
+        lvl = "INFO" if t["status"] == "PASSED" else ("ERROR" if t["status"] in ("FAILED", "ERROR") else "WARN")
+        msg = f"[{t['name']}] -> {t['status']} in {t['duration']}s"
+        if t["status"] in ("FAILED", "ERROR"):
+            msg += f" | Error: {t['error'][:150]}"
+        execution_logs.append({
+            "timestamp": t["timestamp"],
+            "level": lvl,
+            "category": t["category"],
+            "message": msg
+        })
 
     return {
         "summary": summary_data,
         "categories": category_stats,
-        "tests": test_details,
-        "failures": failed_tests,
+        "tests": tests,
+        "failures": failures,
         "logs": execution_logs
     }
 
@@ -157,7 +223,6 @@ def generate_html_report(data: dict, output_path: str):
         status_class = "status-warn"
         status_badge = "⚠️ NO TESTS"
 
-    # SVG doughnut chart calculations
     total = summary["total"]
     passed = summary["passed"]
     failed = summary["failed"]
@@ -167,8 +232,6 @@ def generate_html_report(data: dict, output_path: str):
     failed_pct = (failed / total * 100) if total else 0
     skipped_pct = (skipped / total * 100) if total else 0
 
-    # Draw doughnut SVG segment strokes
-    # Circumference = 2 * pi * r (r=40 -> C=251.3)
     c = 251.3
     passed_dash = f"{passed_pct/100 * c} {c}"
     failed_dash = f"{failed_pct/100 * c} {c}"
@@ -178,28 +241,25 @@ def generate_html_report(data: dict, output_path: str):
     failed_offset = -(passed_pct/100 * c)
     skipped_offset = -((passed_pct + failed_pct)/100 * c)
 
-    # Convert test details into HTML table rows
     details_rows = []
     for t in tests:
         st = t["status"].upper()
         st_badge_cls = "badge-pass" if st == "PASSED" else ("badge-fail" if st in ("FAILED", "ERROR") else "badge-warn")
         tr_cls = "row-pass" if st == "PASSED" else ("row-fail" if st in ("FAILED", "ERROR") else "row-warn")
         
-        # HTML escape test names and modules
         name_esc = saxutils.escape(t["name"])
         cat_esc = saxutils.escape(t["category"])
         mod_esc = saxutils.escape(t["module"])
         err_esc = saxutils.escape(t["error"])
         
-        # Expander logic if error trace exists
-        has_error = t["error"] and t["error"] != "—"
+        has_error = t["error"] and t["error"] != "—" and t["error"] != "None — test passed successfully."
         expander_btn = f'<button class="expand-btn" onclick="toggleRowDetail({t["no"]})">🔍 Details</button>' if has_error else '—'
         
         row_html = f"""
         <tr class="{tr_cls}" data-status="{st.lower()}" id="test-row-{t["no"]}">
             <td>{t["no"]}</td>
             <td><span class="category-tag">{cat_esc}</span></td>
-            <td class="text-secondary">{mod_esc}</td>
+            <td class="text-secondary">{mod_esc if mod_esc else "N/A"}</td>
             <td class="font-medium">{name_esc}</td>
             <td><span class="badge {st_badge_cls}">{st}</span></td>
             <td>{t["duration"]}s</td>
@@ -223,7 +283,6 @@ def generate_html_report(data: dict, output_path: str):
             """
         details_rows.append(row_html)
 
-    # Convert failed tests into special failure summary cards
     failure_cards = []
     for idx, f in enumerate(failures, 1):
         name_esc = saxutils.escape(f["name"])
@@ -237,7 +296,7 @@ def generate_html_report(data: dict, output_path: str):
                 <span class="failure-number">#{idx}</span>
                 <span class="category-tag">{cat_esc}</span>
                 <span class="failure-title font-medium">{name_esc}</span>
-                <span class="failure-meta text-xs text-secondary">{mod_esc} &nbsp;|&nbsp; {f["duration"]}s</span>
+                <span class="failure-meta text-xs text-secondary">{mod_esc if mod_esc else "N/A"} &nbsp;|&nbsp; {f["duration"]}s</span>
             </div>
             <div class="traceback-box margin-top-sm">
                 <div class="traceback-header">
@@ -249,7 +308,6 @@ def generate_html_report(data: dict, output_path: str):
         """
         failure_cards.append(card_html)
 
-    # Convert execution logs into rows
     log_rows = []
     for log in logs:
         lvl = log["level"].upper()
@@ -267,7 +325,6 @@ def generate_html_report(data: dict, output_path: str):
         """
         log_rows.append(row_html)
 
-    # Convert category stats into table rows and horizontal bar chart representation
     cat_rows = []
     cat_bar_charts = []
     for c_stat in cats:
@@ -284,7 +341,6 @@ def generate_html_report(data: dict, output_path: str):
         except ValueError:
             pass
 
-        # CSS width percentage
         width_passed = f"{c_passed / c_total * 100}%" if c_total else "0%"
         width_failed = f"{c_failed / c_total * 100}%" if c_total else "0%"
         width_skipped = f"{c_skipped / c_total * 100}%" if c_total else "0%"
@@ -317,7 +373,6 @@ def generate_html_report(data: dict, output_path: str):
         """
         cat_bar_charts.append(bar_chart_html)
 
-    # Format metadata grid
     meta_cards = []
     for k, v in summary["metadata"].items():
         k_esc = saxutils.escape(k)
@@ -330,13 +385,12 @@ def generate_html_report(data: dict, output_path: str):
         """
         meta_cards.append(card)
 
-    # HTML TEMPLATE
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CrowdSense - E2E Selenium Test Report</title>
+    <title>CrowdSense - E2E Test Report</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {{
@@ -377,7 +431,6 @@ def generate_html_report(data: dict, output_path: str):
             padding-bottom: 40px;
         }}
 
-        /* Typography utility */
         .font-light {{ font-weight: 300; }}
         .font-normal {{ font-weight: 400; }}
         .font-medium {{ font-weight: 500; }}
@@ -399,7 +452,6 @@ def generate_html_report(data: dict, output_path: str):
         .font-mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }}
         .margin-top-sm {{ margin-top: 8px; }}
 
-        /* Top Header */
         header {{
             background: linear-gradient(180deg, rgba(14, 19, 33, 0.9) 0%, rgba(8, 11, 17, 0) 100%);
             border-bottom: 1px solid var(--border-color);
@@ -489,14 +541,12 @@ def generate_html_report(data: dict, output_path: str):
             border: 1px solid rgba(245, 158, 11, 0.3);
         }}
 
-        /* Container */
         .app-container {{
             max-width: 1440px;
             margin: 0 auto;
             padding: 30px 40px;
         }}
 
-        /* KPI Scorecard */
         .scorecard-row {{
             display: grid;
             grid-template-columns: repeat(5, 1fr);
@@ -552,7 +602,6 @@ def generate_html_report(data: dict, output_path: str):
             margin-bottom: 4px;
         }}
 
-        /* Progress Card Extra */
         .kpi-progress-wrapper {{
             display: flex;
             align-items: center;
@@ -586,7 +635,6 @@ def generate_html_report(data: dict, output_path: str):
             font-family: var(--font-family);
         }}
 
-        /* Metadata Grid */
         .metadata-section {{
             background-color: var(--surface-glass);
             border: 1px solid var(--border-color);
@@ -629,7 +677,6 @@ def generate_html_report(data: dict, output_path: str):
             word-break: break-all;
         }}
 
-        /* Workspace Layout */
         .workspace-row {{
             display: flex;
             gap: 30px;
@@ -711,7 +758,6 @@ def generate_html_report(data: dict, output_path: str):
             gap: 8px;
         }}
 
-        /* Tables styling */
         .table-responsive {{
             width: 100%;
             overflow-x: auto;
@@ -749,7 +795,6 @@ def generate_html_report(data: dict, output_path: str):
             background-color: rgba(255, 255, 255, 0.015);
         }}
 
-        /* Status colors & elements */
         .badge {{
             display: inline-flex;
             align-items: center;
@@ -815,7 +860,6 @@ def generate_html_report(data: dict, output_path: str):
             white-space: nowrap;
         }}
 
-        /* Buttons & Filter Toolbar */
         .toolbar {{
             display: flex;
             gap: 15px;
@@ -923,7 +967,6 @@ def generate_html_report(data: dict, output_path: str):
             border-color: var(--border-hover);
         }}
 
-        /* Traceback logs block */
         .detail-row td {{
             background-color: rgba(0, 0, 0, 0.1);
             padding: 15px 24px;
@@ -980,7 +1023,6 @@ def generate_html_report(data: dict, output_path: str):
             color: #fff;
         }}
 
-        /* Dashboard specific charts */
         .dashboard-grid {{
             display: grid;
             grid-template-columns: 1.1fr 0.9fr;
@@ -1004,7 +1046,6 @@ def generate_html_report(data: dict, output_path: str):
             color: var(--text-secondary);
         }}
 
-        /* Category Horizontal Progress Bars */
         .category-bar-row {{
             margin-bottom: 16px;
         }}
@@ -1038,7 +1079,6 @@ def generate_html_report(data: dict, output_path: str):
         .fail-segment {{ background-color: var(--color-fail); }}
         .warn-segment {{ background-color: var(--color-warn); }}
 
-        /* SVG Doughnut legend */
         .doughnut-layout {{
             display: flex;
             flex-direction: column;
@@ -1114,7 +1154,6 @@ def generate_html_report(data: dict, output_path: str):
             font-weight: 700;
         }}
 
-        /* Failed Test Layout */
         .failure-card {{
             background-color: rgba(239, 68, 68, 0.02);
             border: 1px solid rgba(239, 68, 68, 0.1);
@@ -1153,7 +1192,6 @@ def generate_html_report(data: dict, output_path: str):
             white-space: nowrap;
         }}
 
-        /* Logs console theme */
         .log-table td {{
             font-size: 0.85rem;
             padding: 8px 12px;
@@ -1172,7 +1210,6 @@ def generate_html_report(data: dict, output_path: str):
         .log-warn .badge-lvl {{ color: var(--color-warn); border-color: rgba(245, 158, 11, 0.2); }}
         .log-error .badge-lvl {{ color: var(--color-fail); border-color: rgba(239, 68, 68, 0.2); }}
 
-        /* Responsive design */
         @media (max-width: 1024px) {{
             .scorecard-row {{
                 grid-template-columns: repeat(3, 1fr);
@@ -1185,7 +1222,7 @@ def generate_html_report(data: dict, output_path: str):
             }}
         }}
 
-        @media (max-width: 768deg) {{
+        @media (max-width: 768px) {{
             .workspace-row {{
                 flex-direction: column;
             }}
@@ -1239,7 +1276,7 @@ def generate_html_report(data: dict, output_path: str):
             </div>
             <div>
                 <span class="logo-text font-bold">CrowdSense</span>
-                <span class="logo-tag">Selenium E2E</span>
+                <span class="logo-tag">Test Results</span>
             </div>
         </div>
         <div class="header-stats-quick">
@@ -1258,7 +1295,7 @@ def generate_html_report(data: dict, output_path: str):
                     <span>🧪 Total Tests Run</span>
                 </div>
                 <div class="kpi-val">{total}</div>
-                <div class="text-secondary text-xs">All planned test cases</div>
+                <div class="text-secondary text-xs">Executed test cases</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-card-glow glow-pass"></div>
@@ -1293,9 +1330,7 @@ def generate_html_report(data: dict, output_path: str):
                     </div>
                     <div class="doughnut-svg-container" style="width: 50px; height: 50px;">
                         <svg viewBox="0 0 100 100">
-                            <!-- Background ring -->
                             <circle class="progress-circle-bg" cx="50" cy="50" r="40"></circle>
-                            <!-- Fill circle -->
                             <circle class="progress-circle-fill" cx="50" cy="50" r="40" 
                                     style="stroke: var(--color-pass); stroke-dasharray: {passed_dash}; stroke-dashoffset: 0;"></circle>
                         </svg>
@@ -1340,7 +1375,6 @@ def generate_html_report(data: dict, output_path: str):
                     </div>
                     <div class="dashboard-grid">
                         
-                        <!-- Left Panel: Categories -->
                         <div class="dashboard-card">
                             <div class="dashboard-card-title">Category Progress & Coverage</div>
                             <div class="category-progress-list">
@@ -1348,21 +1382,16 @@ def generate_html_report(data: dict, output_path: str):
                             </div>
                         </div>
 
-                        <!-- Right Panel: Doughnut Chart -->
                         <div class="dashboard-card">
                             <div class="dashboard-card-title">Test Status Distribution</div>
                             <div class="doughnut-layout">
                                 <div class="doughnut-svg-container">
                                     <svg viewBox="0 0 100 100">
-                                        <!-- Background Ring -->
                                         <circle cx="50" cy="50" r="40" fill="transparent" stroke="rgba(255,255,255,0.03)" stroke-width="8"></circle>
-                                        <!-- Passed segment -->
                                         <circle cx="50" cy="50" r="40" fill="transparent" stroke="var(--color-pass)" stroke-width="8"
                                                 stroke-dasharray="{passed_dash}" stroke-dashoffset="{passed_offset}"></circle>
-                                        <!-- Failed segment -->
                                         <circle cx="50" cy="50" r="40" fill="transparent" stroke="var(--color-fail)" stroke-width="8"
                                                 stroke-dasharray="{failed_dash}" stroke-dashoffset="{failed_offset}"></circle>
-                                        <!-- Skipped segment -->
                                         <circle cx="50" cy="50" r="40" fill="transparent" stroke="var(--color-warn)" stroke-width="8"
                                                 stroke-dasharray="{skipped_dash}" stroke-dashoffset="{skipped_offset}"></circle>
                                     </svg>
@@ -1393,8 +1422,7 @@ def generate_html_report(data: dict, output_path: str):
 
                     </div>
 
-                    <!-- Category stats table -->
-                    <div class="dashboard-card margin-top-sm" style="margin-top: 30px;">
+                    <div class="dashboard-card" style="margin-top: 30px;">
                         <div class="dashboard-card-title">Module Summary Reference</div>
                         <div class="table-responsive">
                             <table>
@@ -1508,26 +1536,20 @@ def generate_html_report(data: dict, output_path: str):
     </div>
 
     <script>
-        // Tab switching logic
         function switchTab(tabId) {{
-            // Hide all tab contents
             const tabs = document.querySelectorAll('.tab-content');
             tabs.forEach(t => t.classList.remove('active'));
 
-            // Remove active class from menu items
             const menuItems = document.querySelectorAll('.menu-item');
             menuItems.forEach(item => item.classList.remove('active'));
 
-            // Show current tab
             const activeTab = document.getElementById('tab-' + tabId);
             if (activeTab) activeTab.classList.add('active');
 
-            // Set menu item active
             const btn = document.querySelector(`button[onclick="switchTab('${{tabId}}')"]`);
             if (btn) btn.classList.add('active');
         }}
 
-        // Expandable test rows
         function toggleRowDetail(no) {{
             const detailRow = document.getElementById('detail-row-' + no);
             const testRow = document.getElementById('test-row-' + no);
@@ -1542,7 +1564,6 @@ def generate_html_report(data: dict, output_path: str):
             }}
         }}
 
-        // Copy traceback to clipboard
         function copyTraceback(no) {{
             const text = document.getElementById('trace-text-' + no).textContent;
             navigator.clipboard.writeText(text).then(() => {{
@@ -1563,12 +1584,10 @@ def generate_html_report(data: dict, output_path: str):
             }});
         }}
 
-        // Details filtering
         let currentStatusFilter = 'all';
         function filterDetailsStatus(status) {{
             currentStatusFilter = status;
             
-            // Update filter buttons
             const btns = document.querySelectorAll('#details-filter-group .filter-btn');
             btns.forEach(b => {{
                 if (b.getAttribute('data-val') === status) b.classList.add('active');
@@ -1603,14 +1622,13 @@ def generate_html_report(data: dict, output_path: str):
                     row.style.display = 'table-row';
                 }} else {{
                     row.style.display = 'none';
-                    if (detailRow) detailRow.style.display = 'none'; // collapse if hidden
+                    if (detailRow) detailRow.style.display = 'none';
                     const btn = row.querySelector('.expand-btn');
                     if (btn) btn.textContent = '🔍 Details';
                 }}
             }});
         }}
 
-        // Logs filtering
         let currentLogLevelFilter = 'all';
         function filterLogsLevel(lvl) {{
             currentLogLevelFilter = lvl;

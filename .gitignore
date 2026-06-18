@@ -58,8 +58,9 @@ __pycache__/
 htmlcov/
 
 # ── Test reports (auto-generated, do not commit) ─────────────
-tests/selenium_tests/reports/*.xlsx
-tests/selenium_tests/reports/*.log
+tests/selenium_tests/reports/
+appium_tests/reports/
+appium_physical_device_tests/reports/
 e2e_report.html
 *.xlsx
 

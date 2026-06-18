@@ -1,9 +1,9 @@
-name: E2E Automation Testing
+name: Web E2E Automation Testing
 
 # ─────────────────────────────────────────────────────────────
 #  Trigger: runs on every push to any branch,
 #           and on pull requests targeting main / master.
-#  Goal   : Execute E2E tests, generate Excel/HTML reports,
+#  Goal   : Execute Web (Selenium) E2E tests, generate Excel/HTML reports,
 #           and post a rich final analysis summary.
 # ─────────────────────────────────────────────────────────────
 on:
@@ -13,8 +13,8 @@ on:
     branches: [ main, master ]
 
 jobs:
-  e2e-report:
-    name: Run E2E Tests & Generate Reports
+  web-e2e:
+    name: Run Web E2E Tests & Generate Reports
     runs-on: ubuntu-latest
 
     steps:
@@ -120,7 +120,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: "CrowdSense-E2E-Report_${{ env.GIT_BRANCH }}_${{ env.RUN_TS }}_${{ env.GIT_SHA }}"
+          name: "CrowdSense-Web-E2E-Report_${{ env.GIT_BRANCH }}_${{ env.RUN_TS }}_${{ env.GIT_SHA }}"
           path: |
             tests/selenium_tests/reports/*.xlsx
             tests/selenium_tests/reports/*.json
