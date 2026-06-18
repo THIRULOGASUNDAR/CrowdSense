@@ -75,12 +75,47 @@ jobs:
           }
 
       # ── 4. Flutter SDK setup ───────────────────────────────
-      # Installs/configures the Flutter SDK using the specified channel and version.
+      # Checks if Flutter is already in PATH. If not, checks environment variables
+      # or common Windows folders to register Flutter SDK natively on Windows.
       - name: 🚀 Setup Flutter SDK
-        uses: subosito/flutter-action@v2
-        with:
-          channel: 'stable'
-          flutter-version: '3.41.6'
+        shell: powershell
+        run: |
+          $flutterCmd = Get-Command flutter -ErrorAction SilentlyContinue
+          if ($flutterCmd) {
+              Write-Host "Flutter is already available in PATH: $($flutterCmd.Source)"
+              exit 0
+          }
+          
+          # Check standard environment variables
+          $envPaths = @($env:FLUTTER_HOME, $env:FLUTTER_ROOT, $env:FLUTTER_PATH)
+          foreach ($ep in $envPaths) {
+              if ($ep) {
+                  $binPath = Join-Path $ep "bin"
+                  if (Test-Path "$binPath\flutter.bat") {
+                      Write-Host "Found Flutter in environment variable path: $binPath"
+                      echo "$binPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+                      exit 0
+                  }
+              }
+          }
+          
+          # Check typical local install paths
+          $commonPaths = @(
+              "C:\flutter\bin",
+              "C:\src\flutter\bin",
+              "D:\flutter\bin",
+              "E:\flutter\bin"
+          )
+          foreach ($cp in $commonPaths) {
+              if (Test-Path "$cp\flutter.bat") {
+                  Write-Host "Found Flutter at: $cp"
+                  echo "$cp" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+                  exit 0
+              }
+          }
+          
+          Write-Error "Flutter SDK not found! Please pre-install Flutter on your self-hosted Windows runner."
+          exit 1
 
       # ── 5. Python setup ────────────────────────────────────
       # Prepares Python environment and configures pip dependency caching.
