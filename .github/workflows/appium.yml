@@ -196,19 +196,26 @@ jobs:
           # Check and verify driver list
           $driverListWorks = $false
           try {
-              $drivers = & appium driver list --installed 2>$null
-              if ($LASTEXITCODE -eq 0) {
+              $drivers = & appium driver list --installed 2>&1 | Out-String
+              if ($drivers -match "uiautomator2") {
                   $driverListWorks = $true
               }
           } catch {
               Write-Host "Failed to query Appium driver list."
           }
           
-          if ($driverListWorks -and ($drivers -match "uiautomator2")) {
-              Write-Host "UiAutomator2 driver is already installed and working."
+          if ($driverListWorks) {
+              Write-Host "UiAutomator2 driver is already installed."
           } else {
               Write-Host "UiAutomator2 driver not found or Appium was reinstalled. Installing driver..."
-              appium driver install uiautomator2
+              $installOut = & appium driver install uiautomator2 2>&1 | Out-String
+              Write-Host $installOut
+              if ($installOut -match "already installed") {
+                  Write-Host "UiAutomator2 driver is already present."
+              } elseif ($LASTEXITCODE -ne 0 -and $installOut -notmatch "already installed") {
+                  Write-Error "Failed to install uiautomator2 driver."
+                  exit 1
+              }
           }
 
       # ── 9. Build Flutter Debug APK ──────────────────────────
