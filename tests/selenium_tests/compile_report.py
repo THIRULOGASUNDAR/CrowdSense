@@ -54,9 +54,10 @@ def parse_excel_report(excel_path: str) -> dict:
         
     ws = wb[sheet_name]
     
-    # Parse title & metadata from rows 1-2
-    title_val = ws["A1"].value or "CrowdSense E2E Testing Report"
-    subtitle_val = ws["A2"].value or ""
+    # Parse title & metadata from Summary sheet if present, fallback to the main test sheet
+    meta_ws = wb["Summary"] if "Summary" in wb.sheetnames else ws
+    title_val = str(meta_ws["A1"].value or "CrowdSense E2E Testing Report")
+    subtitle_val = str(meta_ws["A2"].value or "")
     
     # Dynamically find the header row containing "No."
     header_row = 4  # Default fallback

@@ -56,6 +56,14 @@ LEFT         = Alignment(horizontal="left",   vertical="center", wrap_text=True)
 # ── Global result store ────────────────────────────────────────────────────────
 _suite_start: datetime.datetime = None
 _results: list = []   # list[dict]: no, category, name, status, duration, error, ts
+_device_info: dict = {
+    "brand": "Google",
+    "model": "Pixel 3a (Emulator)",
+    "android": "13.0",
+    "sdk": "33",
+    "serial": "emulator-5554"
+}
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -128,79 +136,192 @@ def _generate_xlsx():
         return
 
     suite_end = datetime.datetime.now(datetime.timezone.utc)
+    suite_start_str = _suite_start.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z" if _suite_start else ""
+    suite_end_str = suite_end.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+    passed_rows = [r for r in _results if r["status"] == "PASSED"]
+    failed_rows = [r for r in _results if r["status"] == "FAILED"]
+    skipped_rows = [r for r in _results if r["status"] == "SKIPPED"]
+
+    total = len(_results)
+    passed_count = len(passed_rows)
+    failed_count = len(failed_rows)
+    skipped_count = len(skipped_rows)
+    pass_rate = round(passed_count / total * 100, 1) if total else 0.0
+    duration_sec = sum(r["duration"] for r in _results)
+
     wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Test Cases"
 
-    # ── Title banner ──
-    ws.merge_cells("A1:G1")
-    t = ws["A1"]
-    t.value     = "CrowdSense — E2E Test Cases & Results (Appium Mobile)"
-    t.font      = Font(name="Calibri", color="FFFFFF", bold=True, size=16)
-    t.fill      = PatternFill("solid", fgColor="1A3A5C")
+    # ── Sheet 1: Summary ─────────────────────────────────────────────────────
+    ws_sum = wb.active
+    ws_sum.title = "Summary"
+
+    # Row 1 Title
+    ws_sum.merge_cells("A1:H1")
+    t = ws_sum["A1"]
+    t.value = "CrowdSense — Appium Mobile E2E Test Report" if "emulator" in _device_info.get("serial", "") else "CrowdSense — Physical Device Appium E2E Test Report"
+    t.font = Font(name="Calibri", color="FFFFFF", bold=True, size=16)
+    t.fill = PatternFill("solid", fgColor="1A3A5C")
     t.alignment = CENTER
-    ws.row_dimensions[1].height = 40
+    ws_sum.row_dimensions[1].height = 42.0
 
-    # ── Metadata subtitle ──
-    ws.merge_cells("A2:G2")
-    sub = ws["A2"]
+    # Row 2 Subtitle
+    ws_sum.merge_cells("A2:H2")
+    sub = ws_sum["A2"]
     sub.value = (
-        f"Device: Pixel 3a API 37  |  Platform: Android  |  "
+        f"Device: {_device_info.get('brand','Unknown')} {_device_info.get('model','Unknown')} "
+        f"(Android {_device_info.get('android','Unknown')}, Serial: {_device_info.get('serial','Unknown')})  |  "
         f"Automation: UiAutomator2  |  Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
     )
-    sub.font      = Font(name="Calibri", color="FFFFFF", size=10)
-    sub.fill      = PatternFill("solid", fgColor="2D5F8A")
+    sub.font = Font(name="Calibri", color="FFFFFF", size=10)
+    sub.fill = PatternFill("solid", fgColor="2D5F8A")
     sub.alignment = CENTER
-    ws.row_dimensions[2].height = 20
-    ws.row_dimensions[3].height = 10
+    ws_sum.row_dimensions[2].height = 20.0
+    ws_sum.row_dimensions[3].height = 8.0
 
-    # Headers
-    headers = ["No.", "Category", "Test Name", "Status", "Duration (s)", "Error Details", "Timestamp"]
-    for col_idx, hdr in enumerate(headers, start=1):
-        c = ws.cell(row=4, column=col_idx, value=hdr)
-        c.font      = WHITE_FONT
-        c.fill      = HDR_FILL
-        c.border    = THIN_BORDER
-        c.alignment = CENTER
-    ws.row_dimensions[4].height = 26
+    # Row 4 Table headers
+    _write_header(ws_sum, ["Test Suite", "Total", "Passed", "Failed", "Skipped", "Pass Rate %", "Duration (s)", "Start Time"], row=4)
+    ws_sum.row_dimensions[4].height = 26.0
 
-    # Write test cases
-    for idx, r in enumerate(_results, start=5):
-        vals = [r["no"], r["category"], r["name"], r["status"], r["duration"], r["error"], r["ts"]]
-        fill = (PASS_FILL if r["status"] == "PASSED" 
-                else FAIL_FILL if r["status"] == "FAILED" 
-                else SKIP_FILL)
-        
+    # Row 5 Table values
+    suite_title = "CrowdSense Android — Full Appium E2E (Emulator)" if "emulator" in _device_info.get("serial", "") else "CrowdSense Android — Full Appium E2E (Physical Device)"
+    row_vals = [
+        suite_title,
+        total,
+        passed_count,
+        failed_count,
+        skipped_count,
+        f"{pass_rate}%",
+        round(duration_sec, 2),
+        suite_start_str
+    ]
+    for col_idx, val in enumerate(row_vals, start=1):
+        c = ws_sum.cell(row=5, column=col_idx, value=val)
+        c.font = NORMAL_FONT
+        c.border = THIN_BORDER
+        c.alignment = LEFT if col_idx == 1 else CENTER
+    ws_sum.row_dimensions[5].height = 20.0
+    ws_sum.row_dimensions[6].height = 8.0
+
+    # Row 7 Device Info headers
+    _write_header(ws_sum, ["Device Info", "Value"], row=7)
+    # Clear out cells C7:H7 just in case they have borders from _write_header
+    for col in range(3, 9):
+        ws_sum.cell(row=7, column=col).border = Border()
+    ws_sum.row_dimensions[7].height = 26.0
+
+    # Device Info values
+    device_details = [
+        ("Brand", _device_info.get("brand", "Unknown")),
+        ("Model", _device_info.get("model", "Unknown")),
+        ("Android Version", _device_info.get("android", "Unknown")),
+        ("SDK Level", _device_info.get("sdk", "Unknown")),
+        ("Serial / ID", _device_info.get("serial", "Unknown"))
+    ]
+    for idx, (prop, val) in enumerate(device_details, start=8):
+        c_prop = ws_sum.cell(row=idx, column=1, value=prop)
+        c_val = ws_sum.cell(row=idx, column=2, value=val)
+        c_prop.font = BOLD_FONT
+        c_prop.border = THIN_BORDER
+        c_prop.alignment = LEFT
+        c_val.font = NORMAL_FONT
+        c_val.border = THIN_BORDER
+        c_val.alignment = LEFT
+        ws_sum.row_dimensions[idx].height = 20.0
+
+    # Column widths
+    ws_sum.column_dimensions["A"].width = 55.0
+    for col in ["B", "C", "D", "E", "F", "G"]:
+        ws_sum.column_dimensions[col].width = 14.0
+    ws_sum.column_dimensions["H"].width = 26.0
+
+    # ── Sheet 2: Passed Tests ────────────────────────────────────────────────
+    ws_pass = wb.create_sheet("Passed Tests")
+    _write_header(ws_pass, ["No.", "Category", "Test Name", "Duration (s)", "Status"], row=1)
+    for r_idx, r in enumerate(passed_rows, start=2):
+        vals = [r["no"], r["category"], r["name"], r["duration"], r["status"]]
         for c_idx, val in enumerate(vals, start=1):
-            c = ws.cell(row=idx, column=c_idx, value=val)
+            c = ws_pass.cell(row=r_idx, column=c_idx, value=val)
             c.font = NORMAL_FONT
+            c.fill = PASS_FILL
+            c.border = THIN_BORDER
+            c.alignment = LEFT if c_idx in (2, 3) else CENTER
+        ws_pass.row_dimensions[r_idx].height = 20.0
+    ws_pass.column_dimensions["A"].width = 6.0
+    ws_pass.column_dimensions["B"].width = 30.0
+    ws_pass.column_dimensions["C"].width = 72.0
+    ws_pass.column_dimensions["D"].width = 14.0
+    ws_pass.column_dimensions["E"].width = 12.0
+
+    # ── Sheet 3: Failed Tests ────────────────────────────────────────────────
+    ws_fail = wb.create_sheet("Failed Tests")
+    _write_header(ws_fail, ["No.", "Category", "Test Name", "Error / Traceback", "Status", "Timestamp"], row=1)
+    for r_idx, r in enumerate(failed_rows, start=2):
+        vals = [r["no"], r["category"], r["name"], r["error"], r["status"], r["ts"]]
+        for c_idx, val in enumerate(vals, start=1):
+            c = ws_fail.cell(row=r_idx, column=c_idx, value=val)
+            c.font = NORMAL_FONT
+            c.fill = FAIL_FILL
+            c.border = THIN_BORDER
+            c.alignment = LEFT if c_idx in (2, 3, 4) else CENTER
+        ws_fail.row_dimensions[r_idx].height = 20.0
+    ws_fail.column_dimensions["A"].width = 6.0
+    ws_fail.column_dimensions["B"].width = 28.0
+    ws_fail.column_dimensions["C"].width = 55.0
+    ws_fail.column_dimensions["D"].width = 90.0
+    ws_fail.column_dimensions["E"].width = 12.0
+    ws_fail.column_dimensions["F"].width = 22.0
+
+    # ── Sheet 4: Execution Log ───────────────────────────────────────────────
+    ws_log = wb.create_sheet("Execution Log")
+    _write_header(ws_log, ["Timestamp", "Level", "Category", "Test Name", "Result", "Duration (s)"], row=1)
+    for r_idx, r in enumerate(_results, start=2):
+        lvl = "INFO" if r["status"] == "PASSED" else "ERROR"
+        vals = [r["ts"], lvl, r["category"], r["name"], r["status"], r["duration"]]
+        fill = PASS_FILL if r["status"] == "PASSED" else (FAIL_FILL if r["status"] == "FAILED" else SKIP_FILL)
+        for c_idx, val in enumerate(vals, start=1):
+            c = ws_log.cell(row=r_idx, column=c_idx, value=val)
+            c.font = NORMAL_FONT
+            c.fill = fill
+            c.border = THIN_BORDER
+            c.alignment = LEFT if c_idx in (3, 4) else CENTER
+        ws_log.row_dimensions[r_idx].height = 20.0
+    ws_log.column_dimensions["A"].width = 22.0
+    ws_log.column_dimensions["B"].width = 8.0
+    ws_log.column_dimensions["C"].width = 28.0
+    ws_log.column_dimensions["D"].width = 65.0
+    ws_log.column_dimensions["E"].width = 12.0
+    ws_log.column_dimensions["F"].width = 14.0
+
+    # ── Sheet 5: Test Details ────────────────────────────────────────────────
+    ws_det = wb.create_sheet("Test Details")
+    _write_header(ws_det, ["No.", "Category", "Test Name", "Status", "Duration (s)", "Error Details"], row=1)
+    for r_idx, r in enumerate(_results, start=2):
+        vals = [r["no"], r["category"], r["name"], r["status"], r["duration"], r["error"]]
+        fill = PASS_FILL if r["status"] == "PASSED" else (FAIL_FILL if r["status"] == "FAILED" else SKIP_FILL)
+        for c_idx, val in enumerate(vals, start=1):
+            c = ws_det.cell(row=r_idx, column=c_idx, value=val)
+            c.font = NORMAL_FONT
+            c.fill = fill
             c.border = THIN_BORDER
             c.alignment = LEFT if c_idx in (2, 3, 6) else CENTER
-            if c_idx == 4:
-                c.fill = fill
-                c.font = BOLD_FONT
-                if r["status"] == "PASSED":
-                    c.font = Font(name="Calibri", color="276221", bold=True)
-                elif r["status"] == "FAILED":
-                    c.font = Font(name="Calibri", color="9C0006", bold=True)
-                else:
-                    c.font = Font(name="Calibri", color="7D6608", bold=True)
+        ws_det.row_dimensions[r_idx].height = 22.0
+    ws_det.column_dimensions["A"].width = 6.0
+    ws_det.column_dimensions["B"].width = 28.0
+    ws_det.column_dimensions["C"].width = 60.0
+    ws_det.column_dimensions["D"].width = 12.0
+    ws_det.column_dimensions["E"].width = 14.0
+    ws_det.column_dimensions["F"].width = 90.0
+    ws_det.freeze_panes = "A2"
 
-        ws.row_dimensions[idx].height = 20
-
-    widths = [6, 24, 60, 12, 14, 80, 22]
-    for i, w in enumerate(widths, start=1):
-        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
-
-    ws.freeze_panes = "A5"
-
-    ts    = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    ts = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     fname = os.path.join(REPORTS_DIR, f"Appium_E2E_Report_CrowdSense_{ts}.xlsx")
     wb.save(fname)
-    print(f"\n[REPORT] Appium XLSX report saved -> {fname}")
+    print(f"\n[REPORT] Appium 5-sheet report saved -> {fname}")
 
 
 def _write_header(ws, columns, row=1):
+
     for col_idx, hdr in enumerate(columns, start=1):
         c = ws.cell(row=row, column=col_idx, value=hdr)
         c.font      = WHITE_FONT
