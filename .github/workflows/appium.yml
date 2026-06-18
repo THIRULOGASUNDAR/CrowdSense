@@ -168,24 +168,46 @@ jobs:
           node-version: 18
 
       # ── 8. Appium Availability Checks ──────────────────────
-      # Verifies if Appium and the UiAutomator2 driver are installed.
-      # If they are missing on the runner, installs them globally.
+      # Verifies if Appium is installed and working (by running appium -v).
+      # If it's missing or returns an ESM/dependency crash, uninstalls and performs a clean global reinstall.
       - name: 📱 Check and Install Appium & Driver
         shell: powershell
         run: |
           $appiumInstalled = Get-Command appium -ErrorAction SilentlyContinue
-          if (-not $appiumInstalled) {
-              Write-Host "Appium not found. Installing globally..."
-              npm install -g appium
-          } else {
-              Write-Host "Appium is already installed globally."
+          $appiumWorks = $false
+          if ($appiumInstalled) {
+              try {
+                  $version = & appium -v 2>$null
+                  if ($LASTEXITCODE -eq 0 -and $version) {
+                      $appiumWorks = $true
+                      Write-Host "Appium is installed and working. Version: $version"
+                  }
+              } catch {
+                  Write-Host "Appium failed to execute properly."
+              }
           }
           
-          $drivers = appium driver list --installed
-          if ($drivers -match "uiautomator2") {
-              Write-Host "UiAutomator2 driver is already installed."
+          if (-not $appiumWorks) {
+              Write-Host "Appium not found or is corrupted/broken. Re-installing Appium globally..."
+              npm uninstall -g appium
+              npm install -g appium --force
+          }
+          
+          # Check and verify driver list
+          $driverListWorks = $false
+          try {
+              $drivers = & appium driver list --installed 2>$null
+              if ($LASTEXITCODE -eq 0) {
+                  $driverListWorks = $true
+              }
+          } catch {
+              Write-Host "Failed to query Appium driver list."
+          }
+          
+          if ($driverListWorks -and ($drivers -match "uiautomator2")) {
+              Write-Host "UiAutomator2 driver is already installed and working."
           } else {
-              Write-Host "UiAutomator2 driver not found. Installing..."
+              Write-Host "UiAutomator2 driver not found or Appium was reinstalled. Installing driver..."
               appium driver install uiautomator2
           }
 
