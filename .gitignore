@@ -63,6 +63,9 @@ appium_tests/reports/
 appium_physical_device_tests/reports/
 e2e_report.html
 *.xlsx
+reports/*.json
+reports/*.xml
+reports/vulnerability_report.html
 
 # ── Appium / Node ────────────────────────────────────────────
 node_modules/
