@@ -39,9 +39,9 @@ def _exists(driver, *xpaths, timeout=8):
 def _reset_app(driver):
     """Restart the app to a clean state."""
     try:
-        driver.terminate_app("com.crowdsense.app")
+        driver.terminate_app("com.example.crowdsense")
         time.sleep(1)
-        driver.activate_app("com.crowdsense.app")
+        driver.activate_app("com.example.crowdsense")
         time.sleep(3)
     except Exception:
         pass

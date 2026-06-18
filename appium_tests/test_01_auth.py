@@ -54,9 +54,9 @@ def _wait_app_ready(driver, timeout=15):
 def _reset_to_login(driver):
     """Navigate back to the Login screen by restarting the app activity."""
     try:
-        driver.terminate_app("com.crowdsense.app")
+        driver.terminate_app("com.example.crowdsense")
         time.sleep(1)
-        driver.activate_app("com.crowdsense.app")
+        driver.activate_app("com.example.crowdsense")
         time.sleep(3)
     except Exception:
         pass
