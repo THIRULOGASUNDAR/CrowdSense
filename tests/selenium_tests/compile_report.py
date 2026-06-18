@@ -38,14 +38,18 @@ def find_latest_excel_report(reports_dir: str) -> str | None:
     return files[0]
 
 def parse_excel_report(excel_path: str) -> dict:
-    """Parse the single-sheet Excel report into Python dictionaries and lists."""
+    """Parse the Excel report into Python dictionaries and lists."""
     print(f"[INFO] Loading Excel report: {excel_path}")
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     
-    # Look for "Test Cases" sheet
-    sheet_name = "Test Cases"
-    if sheet_name not in wb.sheetnames:
-        # Fallback to active sheet
+    # Look for the test cases sheet. Can be named "Test Cases", "Test Details" (old format), or "Test Results"
+    sheet_name = None
+    for name in ["Test Cases", "Test Details", "Test Results"]:
+        if name in wb.sheetnames:
+            sheet_name = name
+            break
+            
+    if not sheet_name:
         sheet_name = wb.sheetnames[0]
         
     ws = wb[sheet_name]
@@ -54,10 +58,26 @@ def parse_excel_report(excel_path: str) -> dict:
     title_val = ws["A1"].value or "CrowdSense E2E Testing Report"
     subtitle_val = ws["A2"].value or ""
     
-    # Parse headers from row 4
+    # Dynamically find the header row containing "No."
+    header_row = 4  # Default fallback
+    for r in range(1, 11):
+        if r > ws.max_row:
+            break
+        for col in range(1, ws.max_column + 1):
+            val = ws.cell(row=r, column=col).value
+            if val and str(val).strip().lower() in ("no.", "no"):
+                header_row = r
+                break
+        else:
+            continue
+        break
+        
+    data_start_row = header_row + 1
+    
+    # Parse headers from detected header_row
     col_map = {}
     for col in range(1, ws.max_column + 1):
-        val = ws.cell(row=4, column=col).value
+        val = ws.cell(row=header_row, column=col).value
         if val:
             col_map[str(val).strip()] = col
 
@@ -66,11 +86,11 @@ def parse_excel_report(excel_path: str) -> dict:
     mod_col = col_map.get("Module")
     name_col = col_map.get("Test Case Name") or col_map.get("Test Name") or 3
     status_col = col_map.get("Status", 4)
-    dur_col = col_map.get("Duration (s)", 5)
-    err_col = col_map.get("Error Details", 6)
+    dur_col = col_map.get("Duration (s)", 5) or col_map.get("Duration", 5)
+    err_col = col_map.get("Error Details", 6) or col_map.get("Error / Details", 6)
     ts_col = col_map.get("Timestamp", 7)
 
-    # Parse rows starting from row 5
+    # Parse rows starting from detected data_start_row
     tests = []
     failures = []
     categories_dict = {}
@@ -94,12 +114,16 @@ def parse_excel_report(excel_path: str) -> dict:
     if "Device" in metadata:
         metadata["Platform"] = "Android (UiAutomator2)"
 
-    for r in range(5, ws.max_row + 1):
+    for r in range(data_start_row, ws.max_row + 1):
         no_val = ws.cell(row=r, column=no_col).value
         if no_val is None:
             continue
             
-        no = int(no_val)
+        try:
+            no = int(no_val)
+        except (ValueError, TypeError):
+            # Skip any non-numeric rows (e.g. subheaders, footers, or empty cells)
+            continue
         cat = str(ws.cell(row=r, column=cat_col).value or "General").strip()
         module = str(ws.cell(row=r, column=mod_col).value or "").strip() if mod_col else ""
         name = str(ws.cell(row=r, column=name_col).value or "").strip()
