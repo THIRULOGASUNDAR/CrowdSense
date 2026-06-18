@@ -118,13 +118,38 @@ jobs:
           exit 1
 
       # ── 5. Python setup ────────────────────────────────────
-      # Prepares Python environment and configures pip dependency caching.
-      - name: 🐍 Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: appium_tests/requirements.txt
+      # Checks if Python is already in PATH. If not, checks environment variables
+      # or common Windows folders to register Python natively on Windows.
+      - name: 🐍 Setup Python
+        shell: powershell
+        run: |
+          $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+          if ($pythonCmd) {
+              Write-Host "Python is already available in PATH: $($pythonCmd.Source)"
+              python --version
+              exit 0
+          }
+          
+          # Check typical local install paths
+          $commonPaths = @(
+              "$env:USERPROFILE\AppData\Local\Programs\Python\Python311",
+              "$env:USERPROFILE\AppData\Local\Programs\Python\Python312",
+              "$env:USERPROFILE\AppData\Local\Programs\Python\Python310",
+              "C:\Python311",
+              "C:\Python312",
+              "C:\Python310",
+              "C:\Python39"
+          )
+          foreach ($cp in $commonPaths) {
+              if (Test-Path "$cp\python.exe") {
+                  Write-Host "Found Python at: $cp"
+                  echo "$cp" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+                  exit 0
+              }
+          }
+          
+          Write-Error "Python was not found in PATH or common directories! Please pre-install Python on your self-hosted Windows runner."
+          exit 1
 
       # ── 6. Install Python Dependencies ──────────────────────
       # Upgrades pip and installs packages required by the Appium Python test suite.
