@@ -177,7 +177,7 @@ jobs:
           $appiumWorks = $false
           if ($appiumInstalled) {
               try {
-                  $version = & appium -v 2>$null
+                  $version = cmd /c "appium -v 2>&1"
                   if ($LASTEXITCODE -eq 0 -and $version) {
                       $appiumWorks = $true
                       Write-Host "Appium is installed and working. Version: $version"
@@ -189,14 +189,14 @@ jobs:
           
           if (-not $appiumWorks) {
               Write-Host "Appium not found or is corrupted/broken. Re-installing Appium globally..."
-              npm uninstall -g appium
-              npm install -g appium --force
+              cmd /c "npm uninstall -g appium 2>&1"
+              cmd /c "npm install -g appium --force 2>&1"
           }
           
           # Check and verify driver list
           $driverListWorks = $false
           try {
-              $drivers = & appium driver list --installed 2>&1 | Out-String
+              $drivers = cmd /c "appium driver list --installed 2>&1"
               if ($drivers -match "uiautomator2") {
                   $driverListWorks = $true
               }
@@ -208,7 +208,7 @@ jobs:
               Write-Host "UiAutomator2 driver is already installed."
           } else {
               Write-Host "UiAutomator2 driver not found or Appium was reinstalled. Installing driver..."
-              $installOut = & appium driver install uiautomator2 2>&1 | Out-String
+              $installOut = cmd /c "appium driver install uiautomator2 2>&1"
               Write-Host $installOut
               if ($installOut -match "already installed") {
                   Write-Host "UiAutomator2 driver is already present."
