@@ -1,0 +1,1685 @@
+#!/usr/bin/env python3
+"""
+compile_report.py
+=================
+Parses the E2E Excel report (.xlsx) and generates a premium, responsive,
+and interactive HTML report dashboard.
+"""
+from __future__ import annotations
+
+import argparse
+import glob
+import os
+import sys
+import xml.sax.saxutils as saxutils
+import openpyxl
+
+def find_latest_excel_report(reports_dir: str) -> str | None:
+    """Find the most recently created Excel report in the directory."""
+    pattern = os.path.join(reports_dir, "CrowdSense_E2E_Report_*.xlsx")
+    files = glob.glob(pattern)
+    if not files:
+        # Fallback to any .xlsx in the directory
+        pattern_fallback = os.path.join(reports_dir, "*.xlsx")
+        files = glob.glob(pattern_fallback)
+    if not files:
+        return None
+    # Sort by modification time
+    files.sort(key=os.path.getmtime, reverse=True)
+    return files[0]
+
+def parse_excel_report(excel_path: str) -> dict:
+    """Parse Excel sheets into Python dictionaries and lists."""
+    print(f"[INFO] Loading Excel report: {excel_path}")
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    
+    # 1. Parse Summary
+    ws_summary = wb["Summary"]
+    summary_data = {
+        "total": int(ws_summary["A5"].value or 0),
+        "passed": int(ws_summary["B5"].value or 0),
+        "failed": int(ws_summary["C5"].value or 0),
+        "skipped": int(ws_summary["D5"].value or 0),
+        "pass_rate": str(ws_summary["E5"].value or "0%"),
+        "duration": str(ws_summary["F5"].value or "0"),
+        "metadata": {}
+    }
+    
+    # Read property-value rows from Row 8 onwards
+    for r in range(8, ws_summary.max_row + 1):
+        prop = ws_summary.cell(row=r, column=1).value
+        val = ws_summary.cell(row=r, column=2).value
+        if prop:
+            summary_data["metadata"][str(prop).strip()] = str(val or "").strip()
+
+    # 2. Parse Category Stats
+    category_stats = []
+    if "Category Stats" in wb.sheetnames:
+        ws_cats = wb["Category Stats"]
+        for r in range(3, ws_cats.max_row + 1):
+            cat_name = ws_cats.cell(row=r, column=1).value
+            if not cat_name:
+                continue
+            category_stats.append({
+                "category": str(cat_name),
+                "total": int(ws_cats.cell(row=r, column=2).value or 0),
+                "passed": int(ws_cats.cell(row=r, column=3).value or 0),
+                "failed": int(ws_cats.cell(row=r, column=4).value or 0),
+                "skipped": int(ws_cats.cell(row=r, column=5).value or 0),
+                "pass_rate": str(ws_cats.cell(row=r, column=6).value or "0%"),
+            })
+
+    # 3. Parse Test Details
+    test_details = []
+    if "Test Details" in wb.sheetnames:
+        ws_details = wb["Test Details"]
+        for r in range(3, ws_details.max_row + 1):
+            no = ws_details.cell(row=r, column=1).value
+            if no is None:
+                continue
+            test_details.append({
+                "no": int(no),
+                "category": str(ws_details.cell(row=r, column=2).value or "General"),
+                "module": str(ws_details.cell(row=r, column=3).value or ""),
+                "name": str(ws_details.cell(row=r, column=4).value or ""),
+                "status": str(ws_details.cell(row=r, column=5).value or "PENDING"),
+                "duration": float(ws_details.cell(row=r, column=6).value or 0.0),
+                "error": str(ws_details.cell(row=r, column=7).value or "—"),
+                "timestamp": str(ws_details.cell(row=r, column=8).value or ""),
+                "nodeid": str(ws_details.cell(row=r, column=9).value or ""),
+            })
+
+    # 4. Parse Failed Tests
+    failed_tests = []
+    if "Failed Tests" in wb.sheetnames:
+        ws_failed = wb["Failed Tests"]
+        for r in range(3, ws_failed.max_row + 1):
+            no = ws_failed.cell(row=r, column=1).value
+            if no is None:
+                continue
+            failed_tests.append({
+                "no": int(no),
+                "category": str(ws_failed.cell(row=r, column=2).value or "General"),
+                "module": str(ws_failed.cell(row=r, column=3).value or ""),
+                "name": str(ws_failed.cell(row=r, column=4).value or ""),
+                "error": str(ws_failed.cell(row=r, column=5).value or ""),
+                "duration": float(ws_failed.cell(row=r, column=6).value or 0.0),
+                "timestamp": str(ws_failed.cell(row=r, column=7).value or ""),
+            })
+
+    # 5. Parse Execution Log
+    execution_logs = []
+    if "Execution Log" in wb.sheetnames:
+        ws_log = wb["Execution Log"]
+        for r in range(3, ws_log.max_row + 1):
+            ts = ws_log.cell(row=r, column=1).value
+            if not ts:
+                continue
+            execution_logs.append({
+                "timestamp": str(ts),
+                "level": str(ws_log.cell(row=r, column=2).value or "INFO"),
+                "category": str(ws_log.cell(row=r, column=3).value or "General"),
+                "message": str(ws_log.cell(row=r, column=4).value or ""),
+            })
+
+    return {
+        "summary": summary_data,
+        "categories": category_stats,
+        "tests": test_details,
+        "failures": failed_tests,
+        "logs": execution_logs
+    }
+
+def generate_html_report(data: dict, output_path: str):
+    """Write the compiled HTML report to the specified path."""
+    print(f"[INFO] Compiling premium HTML report to: {output_path}")
+    
+    summary = data["summary"]
+    cats = data["categories"]
+    tests = data["tests"]
+    failures = data["failures"]
+    logs = data["logs"]
+
+    # Calculate status badge classes and indicators
+    pass_rate_str = summary["pass_rate"].replace("%", "")
+    try:
+        pass_rate_val = float(pass_rate_str)
+    except ValueError:
+        pass_rate_val = 0.0
+
+    overall_status = "PASSED" if summary["failed"] == 0 and summary["passed"] > 0 else "FAILED"
+    if summary["total"] == 0:
+        overall_status = "EMPTY"
+    
+    status_class = "status-pass" if overall_status == "PASSED" else "status-fail"
+    status_badge = "🟢 PASSED" if overall_status == "PASSED" else "🔴 FAILED"
+    if overall_status == "EMPTY":
+        status_class = "status-warn"
+        status_badge = "⚠️ NO TESTS"
+
+    # SVG doughnut chart calculations
+    total = summary["total"]
+    passed = summary["passed"]
+    failed = summary["failed"]
+    skipped = summary["skipped"]
+
+    passed_pct = (passed / total * 100) if total else 0
+    failed_pct = (failed / total * 100) if total else 0
+    skipped_pct = (skipped / total * 100) if total else 0
+
+    # Draw doughnut SVG segment strokes
+    # Circumference = 2 * pi * r (r=40 -> C=251.3)
+    c = 251.3
+    passed_dash = f"{passed_pct/100 * c} {c}"
+    failed_dash = f"{failed_pct/100 * c} {c}"
+    skipped_dash = f"{skipped_pct/100 * c} {c}"
+
+    passed_offset = 0.0
+    failed_offset = -(passed_pct/100 * c)
+    skipped_offset = -((passed_pct + failed_pct)/100 * c)
+
+    # Convert test details into HTML table rows
+    details_rows = []
+    for t in tests:
+        st = t["status"].upper()
+        st_badge_cls = "badge-pass" if st == "PASSED" else ("badge-fail" if st in ("FAILED", "ERROR") else "badge-warn")
+        tr_cls = "row-pass" if st == "PASSED" else ("row-fail" if st in ("FAILED", "ERROR") else "row-warn")
+        
+        # HTML escape test names and modules
+        name_esc = saxutils.escape(t["name"])
+        cat_esc = saxutils.escape(t["category"])
+        mod_esc = saxutils.escape(t["module"])
+        err_esc = saxutils.escape(t["error"])
+        
+        # Expander logic if error trace exists
+        has_error = t["error"] and t["error"] != "—"
+        expander_btn = f'<button class="expand-btn" onclick="toggleRowDetail({t["no"]})">🔍 Details</button>' if has_error else '—'
+        
+        row_html = f"""
+        <tr class="{tr_cls}" data-status="{st.lower()}" id="test-row-{t["no"]}">
+            <td>{t["no"]}</td>
+            <td><span class="category-tag">{cat_esc}</span></td>
+            <td class="text-secondary">{mod_esc}</td>
+            <td class="font-medium">{name_esc}</td>
+            <td><span class="badge {st_badge_cls}">{st}</span></td>
+            <td>{t["duration"]}s</td>
+            <td>{expander_btn}</td>
+            <td class="text-secondary font-mono text-xs">{t["timestamp"]}</td>
+        </tr>
+        """
+        if has_error:
+            row_html += f"""
+            <tr class="detail-row" id="detail-row-{t["no"]}" style="display: none;">
+                <td colspan="8">
+                    <div class="traceback-box">
+                        <div class="traceback-header">
+                            <span>❌ Traceback & Error Logs - Test #{t["no"]} ({name_esc})</span>
+                            <button class="copy-btn" onclick="copyTraceback({t["no"]})">Copy</button>
+                        </div>
+                        <pre id="trace-text-{t["no"]}">{err_esc}</pre>
+                    </div>
+                </td>
+            </tr>
+            """
+        details_rows.append(row_html)
+
+    # Convert failed tests into special failure summary cards
+    failure_cards = []
+    for idx, f in enumerate(failures, 1):
+        name_esc = saxutils.escape(f["name"])
+        cat_esc = saxutils.escape(f["category"])
+        mod_esc = saxutils.escape(f["module"])
+        err_esc = saxutils.escape(f["error"])
+        
+        card_html = f"""
+        <div class="failure-card">
+            <div class="failure-card-header">
+                <span class="failure-number">#{idx}</span>
+                <span class="category-tag">{cat_esc}</span>
+                <span class="failure-title font-medium">{name_esc}</span>
+                <span class="failure-meta text-xs text-secondary">{mod_esc} &nbsp;|&nbsp; {f["duration"]}s</span>
+            </div>
+            <div class="traceback-box margin-top-sm">
+                <div class="traceback-header">
+                    <span>Terminal Output</span>
+                </div>
+                <pre>{err_esc}</pre>
+            </div>
+        </div>
+        """
+        failure_cards.append(card_html)
+
+    # Convert execution logs into rows
+    log_rows = []
+    for log in logs:
+        lvl = log["level"].upper()
+        lvl_cls = "log-info" if lvl == "INFO" else ("log-error" if lvl in ("ERROR", "FAIL") else "log-warn")
+        msg_esc = saxutils.escape(log["message"])
+        cat_esc = saxutils.escape(log["category"])
+        
+        row_html = f"""
+        <tr class="{lvl_cls}" data-level="{lvl.lower()}">
+            <td class="text-secondary font-mono text-xs">{log["timestamp"]}</td>
+            <td><span class="badge badge-lvl">{lvl}</span></td>
+            <td><span class="category-tag">{cat_esc}</span></td>
+            <td class="log-message font-mono">{msg_esc}</td>
+        </tr>
+        """
+        log_rows.append(row_html)
+
+    # Convert category stats into table rows and horizontal bar chart representation
+    cat_rows = []
+    cat_bar_charts = []
+    for c_stat in cats:
+        c_passed = c_stat["passed"]
+        c_failed = c_stat["failed"]
+        c_skipped = c_stat["skipped"]
+        c_total = c_stat["total"]
+        c_rate_str = c_stat["pass_rate"]
+        c_name_esc = saxutils.escape(c_stat["category"])
+        
+        c_pass_rate = 0.0
+        try:
+            c_pass_rate = float(c_rate_str.replace("%", ""))
+        except ValueError:
+            pass
+
+        # CSS width percentage
+        width_passed = f"{c_passed / c_total * 100}%" if c_total else "0%"
+        width_failed = f"{c_failed / c_total * 100}%" if c_total else "0%"
+        width_skipped = f"{c_skipped / c_total * 100}%" if c_total else "0%"
+
+        tr_cls = "row-pass" if c_failed == 0 else "row-fail"
+        row_html = f"""
+        <tr class="{tr_cls}">
+            <td class="font-medium">{c_name_esc}</td>
+            <td class="text-center font-medium">{c_total}</td>
+            <td class="text-center text-pass font-medium">{c_passed}</td>
+            <td class="text-center text-fail font-medium">{c_failed}</td>
+            <td class="text-center text-warn font-medium">{c_skipped}</td>
+            <td class="text-right font-medium">{c_rate_str}</td>
+        </tr>
+        """
+        cat_rows.append(row_html)
+
+        bar_chart_html = f"""
+        <div class="category-bar-row">
+            <div class="category-bar-label">
+                <span class="font-medium">{c_name_esc}</span>
+                <span class="text-secondary text-xs">{c_passed}/{c_total} Passed ({c_rate_str})</span>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-segment pass-segment" style="width: {width_passed}"></div>
+                <div class="progress-segment fail-segment" style="width: {width_failed}"></div>
+                <div class="progress-segment warn-segment" style="width: {width_skipped}"></div>
+            </div>
+        </div>
+        """
+        cat_bar_charts.append(bar_chart_html)
+
+    # Format metadata grid
+    meta_cards = []
+    for k, v in summary["metadata"].items():
+        k_esc = saxutils.escape(k)
+        v_esc = saxutils.escape(v)
+        card = f"""
+        <div class="meta-card">
+            <span class="meta-card-label">{k_esc}</span>
+            <span class="meta-card-value">{v_esc}</span>
+        </div>
+        """
+        meta_cards.append(card)
+
+    # HTML TEMPLATE
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CrowdSense - E2E Selenium Test Report</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --bg-color: #080B11;
+            --surface-color: #0E1321;
+            --surface-hover: #151C30;
+            --surface-glass: rgba(14, 19, 33, 0.7);
+            --border-color: rgba(255, 255, 255, 0.06);
+            --border-hover: rgba(255, 255, 255, 0.12);
+            --text-primary: #F9FAFB;
+            --text-secondary: #9CA3AF;
+            --text-muted: #6B7280;
+            --color-blue: #3B82F6;
+            --color-blue-glow: rgba(59, 130, 246, 0.15);
+            --color-pass: #10B981;
+            --color-pass-glow: rgba(16, 185, 129, 0.15);
+            --color-fail: #EF4444;
+            --color-fail-glow: rgba(239, 68, 68, 0.15);
+            --color-warn: #F59E0B;
+            --color-warn-glow: rgba(245, 158, 11, 0.15);
+            --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            --transition-speed: 0.25s;
+        }}
+
+        * {{
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }}
+
+        body {{
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: var(--font-family);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+            padding-bottom: 40px;
+        }}
+
+        /* Typography utility */
+        .font-light {{ font-weight: 300; }}
+        .font-normal {{ font-weight: 400; }}
+        .font-medium {{ font-weight: 500; }}
+        .font-semibold {{ font-weight: 600; }}
+        .font-bold {{ font-weight: 700; }}
+        
+        .text-center {{ text-align: center; }}
+        .text-left {{ text-align: left; }}
+        .text-right {{ text-align: right; }}
+        .text-secondary {{ color: var(--text-secondary); }}
+        .text-muted {{ color: var(--text-muted); }}
+        
+        .text-pass {{ color: var(--color-pass); }}
+        .text-fail {{ color: var(--color-fail); }}
+        .text-warn {{ color: var(--color-warn); }}
+        .text-xs {{ font-size: 0.75rem; }}
+        .text-sm {{ font-size: 0.875rem; }}
+        
+        .font-mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }}
+        .margin-top-sm {{ margin-top: 8px; }}
+
+        /* Top Header */
+        header {{
+            background: linear-gradient(180deg, rgba(14, 19, 33, 0.9) 0%, rgba(8, 11, 17, 0) 100%);
+            border-bottom: 1px solid var(--border-color);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }}
+
+        .logo-area {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }}
+
+        .logo-icon {{
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--color-blue), var(--color-pass));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+        }}
+
+        .logo-icon svg {{
+            width: 18px;
+            height: 18px;
+            fill: #fff;
+        }}
+
+        .logo-text {{
+            font-size: 1.25rem;
+            letter-spacing: 0.5px;
+            background: linear-gradient(to right, #fff, var(--text-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }}
+
+        .logo-tag {{
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }}
+
+        .header-stats-quick {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }}
+
+        .overall-badge-banner {{
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }}
+
+        .status-pass {{
+            background-color: var(--color-pass-glow);
+            color: var(--color-pass);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
+        }}
+
+        .status-fail {{
+            background-color: var(--color-fail-glow);
+            color: var(--color-fail);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.1);
+        }}
+
+        .status-warn {{
+            background-color: var(--color-warn-glow);
+            color: var(--color-warn);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }}
+
+        /* Container */
+        .app-container {{
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 30px 40px;
+        }}
+
+        /* KPI Scorecard */
+        .scorecard-row {{
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }}
+
+        .kpi-card {{
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px 24px;
+            position: relative;
+            overflow: hidden;
+            transition: all var(--transition-speed);
+        }}
+
+        .kpi-card:hover {{
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+        }}
+
+        .kpi-card-glow {{
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 80px;
+            height: 80px;
+            filter: blur(40px);
+            border-radius: 50%;
+            opacity: 0.15;
+            pointer-events: none;
+        }}
+
+        .glow-blue {{ background-color: var(--color-blue); }}
+        .glow-pass {{ background-color: var(--color-pass); }}
+        .glow-fail {{ background-color: var(--color-fail); }}
+        .glow-warn {{ background-color: var(--color-warn); }}
+
+        .kpi-label {{
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }}
+
+        .kpi-val {{
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1.1;
+            margin-bottom: 4px;
+        }}
+
+        /* Progress Card Extra */
+        .kpi-progress-wrapper {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }}
+
+        .progress-circle-svg {{
+            width: 60px;
+            height: 60px;
+            transform: rotate(-90deg);
+        }}
+
+        .progress-circle-bg {{
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.05);
+            stroke-width: 6px;
+        }}
+
+        .progress-circle-fill {{
+            fill: none;
+            stroke: var(--color-blue);
+            stroke-width: 6px;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.8s ease-in-out;
+        }}
+
+        .progress-circle-text {{
+            font-size: 0.75rem;
+            font-weight: 700;
+            fill: var(--text-primary);
+            font-family: var(--font-family);
+        }}
+
+        /* Metadata Grid */
+        .metadata-section {{
+            background-color: var(--surface-glass);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px 24px;
+            margin-bottom: 35px;
+            backdrop-filter: blur(8px);
+        }}
+
+        .metadata-section-title {{
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }}
+
+        .metadata-grid {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }}
+
+        .meta-card {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            border-left: 2px solid rgba(255, 255, 255, 0.06);
+            padding-left: 14px;
+        }}
+
+        .meta-card-label {{
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }}
+
+        .meta-card-value {{
+            font-size: 0.95rem;
+            font-weight: 500;
+            word-break: break-all;
+        }}
+
+        /* Workspace Layout */
+        .workspace-row {{
+            display: flex;
+            gap: 30px;
+        }}
+
+        .sidebar-menu {{
+            flex: 0 0 250px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }}
+
+        .menu-item {{
+            background: none;
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+            font-family: var(--font-family);
+            font-size: 0.95rem;
+            font-weight: 500;
+            text-align: left;
+            padding: 12px 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all var(--transition-speed);
+        }}
+
+        .menu-item:hover {{
+            background-color: var(--surface-hover);
+            color: var(--text-primary);
+        }}
+
+        .menu-item.active {{
+            background-color: rgba(59, 130, 246, 0.08);
+            border-color: rgba(59, 130, 246, 0.25);
+            color: var(--color-blue);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }}
+
+        .content-area {{
+            flex: 1;
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 30px;
+            min-height: 500px;
+        }}
+
+        .tab-content {{
+            display: none;
+            animation: fadeIn 0.3s ease-in-out;
+        }}
+
+        .tab-content.active {{
+            display: block;
+        }}
+
+        @keyframes fadeIn {{
+            from {{ opacity: 0; transform: translateY(4px); }}
+            to {{ opacity: 1; transform: translateY(0); }}
+        }}
+
+        .content-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+        }}
+
+        .content-title {{
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+
+        /* Tables styling */
+        .table-responsive {{
+            width: 100%;
+            overflow-x: auto;
+        }}
+
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.925rem;
+        }}
+
+        th {{
+            background-color: rgba(0, 0, 0, 0.15);
+            color: var(--text-secondary);
+            font-weight: 600;
+            padding: 14px 16px;
+            font-size: 0.825rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1.5px solid var(--border-color);
+        }}
+
+        td {{
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: middle;
+        }}
+
+        tr:last-child td {{
+            border-bottom: none;
+        }}
+
+        tbody tr:hover td {{
+            background-color: rgba(255, 255, 255, 0.015);
+        }}
+
+        /* Status colors & elements */
+        .badge {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.725rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }}
+
+        .badge-pass {{
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--color-pass);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }}
+
+        .badge-fail {{
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--color-fail);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }}
+
+        .badge-warn {{
+            background-color: rgba(245, 158, 11, 0.1);
+            color: var(--color-warn);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }}
+
+        .badge-lvl {{
+            padding: 2px 6px;
+            font-size: 0.65rem;
+            font-weight: 700;
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+        }}
+
+        .row-pass .badge-lvl {{
+            background-color: rgba(16, 185, 129, 0.06);
+            color: var(--color-pass);
+        }}
+
+        .row-fail .badge-lvl {{
+            background-color: rgba(239, 68, 68, 0.06);
+            color: var(--color-fail);
+        }}
+
+        .row-warn .badge-lvl {{
+            background-color: rgba(245, 158, 11, 0.06);
+            color: var(--color-warn);
+        }}
+
+        .category-tag {{
+            background-color: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            font-size: 0.75rem;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 6px;
+            color: var(--text-primary);
+            white-space: nowrap;
+        }}
+
+        /* Buttons & Filter Toolbar */
+        .toolbar {{
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }}
+
+        .search-container {{
+            position: relative;
+            flex: 1;
+            min-width: 250px;
+        }}
+
+        .search-input {{
+            width: 100%;
+            background-color: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px 16px 10px 40px;
+            color: var(--text-primary);
+            font-family: var(--font-family);
+            font-size: 0.9rem;
+            transition: all var(--transition-speed);
+        }}
+
+        .search-input:focus {{
+            outline: none;
+            border-color: var(--color-blue);
+            background-color: rgba(0, 0, 0, 0.3);
+            box-shadow: 0 0 0 2px var(--color-blue-glow);
+        }}
+
+        .search-icon-svg {{
+            position: absolute;
+            left: 14px;
+            top: 12px;
+            width: 16px;
+            height: 16px;
+            fill: var(--text-muted);
+            pointer-events: none;
+        }}
+
+        .filter-group {{
+            display: flex;
+            background-color: rgba(0, 0, 0, 0.15);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 4px;
+            gap: 4px;
+        }}
+
+        .filter-btn {{
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-family: var(--font-family);
+            font-size: 0.85rem;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all var(--transition-speed);
+        }}
+
+        .filter-btn:hover {{
+            color: var(--text-primary);
+        }}
+
+        .filter-btn.active {{
+            background-color: var(--surface-hover);
+            color: var(--text-primary);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }}
+
+        .filter-btn[data-val="passed"].active {{
+            color: var(--color-pass);
+            background-color: var(--color-pass-glow);
+        }}
+
+        .filter-btn[data-val="failed"].active {{
+            color: var(--color-fail);
+            background-color: var(--color-fail-glow);
+        }}
+
+        .filter-btn[data-val="skipped"].active {{
+            color: var(--color-warn);
+            background-color: var(--color-warn-glow);
+        }}
+
+        .expand-btn {{
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-family: var(--font-family);
+            font-size: 0.8rem;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all var(--transition-speed);
+        }}
+
+        .expand-btn:hover {{
+            background-color: var(--surface-hover);
+            color: var(--text-primary);
+            border-color: var(--border-hover);
+        }}
+
+        /* Traceback logs block */
+        .detail-row td {{
+            background-color: rgba(0, 0, 0, 0.1);
+            padding: 15px 24px;
+            border-bottom: 1px solid var(--border-color);
+        }}
+
+        .traceback-box {{
+            background-color: #060913;
+            border: 1px solid rgba(239, 68, 68, 0.15);
+            border-left: 4px solid var(--color-fail);
+            border-radius: 8px;
+            overflow: hidden;
+        }}
+
+        .traceback-header {{
+            background-color: rgba(239, 68, 68, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            padding: 8px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.8rem;
+            font-family: var(--font-family);
+            color: var(--color-fail);
+            font-weight: 500;
+        }}
+
+        .traceback-box pre {{
+            margin: 0;
+            padding: 16px;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: #E5E7EB;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 400px;
+            overflow-y: auto;
+        }}
+
+        .copy-btn {{
+            background: none;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--color-fail);
+            font-size: 0.725rem;
+            padding: 2px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+
+        .copy-btn:hover {{
+            background-color: var(--color-fail);
+            color: #fff;
+        }}
+
+        /* Dashboard specific charts */
+        .dashboard-grid {{
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 30px;
+        }}
+
+        .dashboard-card {{
+            background-color: rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+        }}
+
+        .dashboard-card-title {{
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--text-secondary);
+        }}
+
+        /* Category Horizontal Progress Bars */
+        .category-bar-row {{
+            margin-bottom: 16px;
+        }}
+
+        .category-bar-row:last-child {{
+            margin-bottom: 0;
+        }}
+
+        .category-bar-label {{
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 6px;
+        }}
+
+        .progress-bar-container {{
+            height: 8px;
+            background-color: rgba(255, 255, 255, 0.03);
+            border-radius: 4px;
+            display: flex;
+            overflow: hidden;
+            width: 100%;
+        }}
+
+        .progress-segment {{
+            height: 100%;
+            transition: width 0.5s ease-out;
+        }}
+
+        .pass-segment {{ background-color: var(--color-pass); }}
+        .fail-segment {{ background-color: var(--color-fail); }}
+        .warn-segment {{ background-color: var(--color-warn); }}
+
+        /* SVG Doughnut legend */
+        .doughnut-layout {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+        }}
+
+        .doughnut-svg-container {{
+            position: relative;
+            width: 160px;
+            height: 160px;
+        }}
+
+        .doughnut-svg-container svg {{
+            width: 100%;
+            height: 100%;
+        }}
+
+        .doughnut-inner-text {{
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }}
+
+        .doughnut-inner-val {{
+            font-size: 1.75rem;
+            font-weight: 700;
+            line-height: 1.1;
+        }}
+
+        .doughnut-inner-lbl {{
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
+
+        .doughnut-legend {{
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            width: 100%;
+        }}
+
+        .legend-item {{
+            background-color: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px;
+            text-align: center;
+        }}
+
+        .legend-indicator {{
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }}
+
+        .legend-label {{
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            display: block;
+            margin-bottom: 2px;
+        }}
+
+        .legend-val {{
+            font-size: 1.1rem;
+            font-weight: 700;
+        }}
+
+        /* Failed Test Layout */
+        .failure-card {{
+            background-color: rgba(239, 68, 68, 0.02);
+            border: 1px solid rgba(239, 68, 68, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }}
+
+        .failure-card:last-child {{
+            margin-bottom: 0;
+        }}
+
+        .failure-card-header {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }}
+
+        .failure-number {{
+            background-color: var(--color-fail-glow);
+            color: var(--color-fail);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            font-size: 0.8rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 6px;
+        }}
+
+        .failure-title {{
+            font-size: 0.95rem;
+            flex-grow: 1;
+        }}
+
+        .failure-meta {{
+            white-space: nowrap;
+        }}
+
+        /* Logs console theme */
+        .log-table td {{
+            font-size: 0.85rem;
+            padding: 8px 12px;
+        }}
+
+        .log-message {{
+            color: #D1D5DB;
+            word-break: break-all;
+        }}
+
+        .log-info td {{ border-left: 2px solid var(--color-blue); }}
+        .log-warn td {{ border-left: 2px solid var(--color-warn); }}
+        .log-error td {{ border-left: 2px solid var(--color-fail); }}
+        
+        .log-info .badge-lvl {{ color: var(--color-blue); border-color: rgba(59, 130, 246, 0.2); }}
+        .log-warn .badge-lvl {{ color: var(--color-warn); border-color: rgba(245, 158, 11, 0.2); }}
+        .log-error .badge-lvl {{ color: var(--color-fail); border-color: rgba(239, 68, 68, 0.2); }}
+
+        /* Responsive design */
+        @media (max-width: 1024px) {{
+            .scorecard-row {{
+                grid-template-columns: repeat(3, 1fr);
+            }}
+            .metadata-grid {{
+                grid-template-columns: repeat(2, 1fr);
+            }}
+            .dashboard-grid {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+
+        @media (max-width: 768deg) {{
+            .workspace-row {{
+                flex-direction: column;
+            }}
+            .sidebar-menu {{
+                flex: none;
+                flex-direction: row;
+                overflow-x: auto;
+                padding-bottom: 8px;
+            }}
+            .menu-item {{
+                white-space: nowrap;
+            }}
+            header {{
+                padding: 15px 20px;
+                flex-direction: column;
+                gap: 15px;
+                align-items: flex-start;
+            }}
+            .header-stats-quick {{
+                width: 100%;
+                justify-content: space-between;
+            }}
+            .scorecard-row {{
+                grid-template-columns: repeat(2, 1fr);
+            }}
+            .app-container {{
+                padding: 20px;
+            }}
+        }}
+
+        @media (max-width: 480px) {{
+            .scorecard-row {{
+                grid-template-columns: 1fr;
+            }}
+            .metadata-grid {{
+                grid-template-columns: 1fr;
+            }}
+        }}
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-area">
+            <div class="logo-icon">
+                <svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="9" stroke="#fff" stroke-width="2" fill="none" opacity="0.3"></circle>
+                    <path d="M12 3a9 9 0 0 1 9 9h-2a7 7 0 0 0-7-7V3z"></path>
+                    <circle cx="12" cy="12" r="3" fill="#fff"></circle>
+                </svg>
+            </div>
+            <div>
+                <span class="logo-text font-bold">CrowdSense</span>
+                <span class="logo-tag">Selenium E2E</span>
+            </div>
+        </div>
+        <div class="header-stats-quick">
+            <span class="text-secondary text-sm">Pass Rate: <strong class="text-primary font-semibold">{summary["pass_rate"]}</strong></span>
+            <span class="overall-badge-banner {status_class}">{status_badge}</span>
+        </div>
+    </header>
+
+    <div class="app-container">
+        
+        <!-- KPI Scorecard -->
+        <div class="scorecard-row">
+            <div class="kpi-card">
+                <div class="kpi-card-glow glow-blue"></div>
+                <div class="kpi-label">
+                    <span>🧪 Total Tests Run</span>
+                </div>
+                <div class="kpi-val">{total}</div>
+                <div class="text-secondary text-xs">All planned test cases</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-card-glow glow-pass"></div>
+                <div class="kpi-label">
+                    <span class="text-pass">✅ Passed</span>
+                </div>
+                <div class="kpi-val text-pass">{passed}</div>
+                <div class="text-secondary text-xs">Executed and verified</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-card-glow glow-fail"></div>
+                <div class="kpi-label">
+                    <span class="text-fail">❌ Failed</span>
+                </div>
+                <div class="kpi-val text-fail">{failed}</div>
+                <div class="text-secondary text-xs">Assertions/system errors</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-card-glow glow-warn"></div>
+                <div class="kpi-label">
+                    <span class="text-warn">⚠️ Skipped</span>
+                </div>
+                <div class="kpi-val text-warn">{skipped}</div>
+                <div class="text-secondary text-xs">Bypassed or conditional</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-card-glow glow-blue"></div>
+                <div class="kpi-progress-wrapper">
+                    <div>
+                        <div class="kpi-label">📈 Pass Rate</div>
+                        <div class="kpi-val">{summary["pass_rate"]}</div>
+                    </div>
+                    <div class="doughnut-svg-container" style="width: 50px; height: 50px;">
+                        <svg viewBox="0 0 100 100">
+                            <!-- Background ring -->
+                            <circle class="progress-circle-bg" cx="50" cy="50" r="40"></circle>
+                            <!-- Fill circle -->
+                            <circle class="progress-circle-fill" cx="50" cy="50" r="40" 
+                                    style="stroke: var(--color-pass); stroke-dasharray: {passed_dash}; stroke-dashoffset: 0;"></circle>
+                        </svg>
+                    </div>
+                </div>
+                <div class="text-secondary text-xs">Passed vs Total executed</div>
+            </div>
+        </div>
+
+        <!-- Metadata Panel -->
+        <div class="metadata-section">
+            <div class="metadata-section-title font-semibold">Run Execution Info</div>
+            <div class="metadata-grid">
+                {"".join(meta_cards)}
+            </div>
+        </div>
+
+        <!-- Sidebar Navigation and Workspace -->
+        <div class="workspace-row">
+            
+            <div class="sidebar-menu">
+                <button class="menu-item active" onclick="switchTab('dashboard')">
+                    <span>📊</span> Dashboard
+                </button>
+                <button class="menu-item" onclick="switchTab('test-details')">
+                    <span>📋</span> Test Details ({len(tests)})
+                </button>
+                <button class="menu-item" onclick="switchTab('failed-tests')">
+                    <span>❌</span> Failed Tests ({len(failures)})
+                </button>
+                <button class="menu-item" onclick="switchTab('execution-log')">
+                    <span>📒</span> Execution Log ({len(logs)})
+                </button>
+            </div>
+
+            <div class="content-area">
+                
+                <!-- Tab 1: Dashboard -->
+                <div class="tab-content active" id="tab-dashboard">
+                    <div class="content-header">
+                        <div class="content-title">📊 Execution Overview & Performance</div>
+                    </div>
+                    <div class="dashboard-grid">
+                        
+                        <!-- Left Panel: Categories -->
+                        <div class="dashboard-card">
+                            <div class="dashboard-card-title">Category Progress & Coverage</div>
+                            <div class="category-progress-list">
+                                {"".join(cat_bar_charts)}
+                            </div>
+                        </div>
+
+                        <!-- Right Panel: Doughnut Chart -->
+                        <div class="dashboard-card">
+                            <div class="dashboard-card-title">Test Status Distribution</div>
+                            <div class="doughnut-layout">
+                                <div class="doughnut-svg-container">
+                                    <svg viewBox="0 0 100 100">
+                                        <!-- Background Ring -->
+                                        <circle cx="50" cy="50" r="40" fill="transparent" stroke="rgba(255,255,255,0.03)" stroke-width="8"></circle>
+                                        <!-- Passed segment -->
+                                        <circle cx="50" cy="50" r="40" fill="transparent" stroke="var(--color-pass)" stroke-width="8"
+                                                stroke-dasharray="{passed_dash}" stroke-dashoffset="{passed_offset}"></circle>
+                                        <!-- Failed segment -->
+                                        <circle cx="50" cy="50" r="40" fill="transparent" stroke="var(--color-fail)" stroke-width="8"
+                                                stroke-dasharray="{failed_dash}" stroke-dashoffset="{failed_offset}"></circle>
+                                        <!-- Skipped segment -->
+                                        <circle cx="50" cy="50" r="40" fill="transparent" stroke="var(--color-warn)" stroke-width="8"
+                                                stroke-dasharray="{skipped_dash}" stroke-dashoffset="{skipped_offset}"></circle>
+                                    </svg>
+                                    <div class="doughnut-inner-text">
+                                        <div class="doughnut-inner-val font-bold">{summary["pass_rate"]}</div>
+                                        <div class="doughnut-inner-lbl font-semibold">Passed</div>
+                                    </div>
+                                </div>
+                                <div class="doughnut-legend">
+                                    <div class="legend-item">
+                                        <span class="legend-indicator" style="background-color: var(--color-pass);"></span>
+                                        <span class="legend-label font-medium">Passed</span>
+                                        <span class="legend-val text-pass font-bold">{passed}</span>
+                                    </div>
+                                    <div class="legend-item">
+                                        <span class="legend-indicator" style="background-color: var(--color-fail);"></span>
+                                        <span class="legend-label font-medium">Failed</span>
+                                        <span class="legend-val text-fail font-bold">{failed}</span>
+                                    </div>
+                                    <div class="legend-item">
+                                        <span class="legend-indicator" style="background-color: var(--color-warn);"></span>
+                                        <span class="legend-label font-medium">Skipped</span>
+                                        <span class="legend-val text-warn font-bold">{skipped}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <!-- Category stats table -->
+                    <div class="dashboard-card margin-top-sm" style="margin-top: 30px;">
+                        <div class="dashboard-card-title">Module Summary Reference</div>
+                        <div class="table-responsive">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th class="text-left">Category</th>
+                                        <th class="text-center">Total Tests</th>
+                                        <th class="text-center">Passed</th>
+                                        <th class="text-center">Failed</th>
+                                        <th class="text-center">Skipped</th>
+                                        <th class="text-right">Pass Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {"".join(cat_rows)}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Test Details -->
+                <div class="tab-content" id="tab-test-details">
+                    <div class="content-header">
+                        <div class="content-title">📋 Full Test Suite Execution Details</div>
+                    </div>
+                    <div class="toolbar">
+                        <div class="search-container">
+                            <svg class="search-icon-svg" viewBox="0 0 24 24">
+                                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                            </svg>
+                            <input type="text" class="search-input" id="search-details-input" placeholder="Search by name, category, or module..." oninput="filterDetailsTable()">
+                        </div>
+                        <div class="filter-group" id="details-filter-group">
+                            <button class="filter-btn active" data-val="all" onclick="filterDetailsStatus('all')">All</button>
+                            <button class="filter-btn" data-val="passed" onclick="filterDetailsStatus('passed')">Passed</button>
+                            <button class="filter-btn" data-val="failed" onclick="filterDetailsStatus('failed')">Failed</button>
+                            <button class="filter-btn" data-val="skipped" onclick="filterDetailsStatus('skipped')">Skipped</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="details-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-left" style="width: 60px;">ID</th>
+                                    <th class="text-left" style="width: 140px;">Category</th>
+                                    <th class="text-left" style="width: 160px;">Module</th>
+                                    <th class="text-left">Test Name</th>
+                                    <th class="text-left" style="width: 100px;">Status</th>
+                                    <th class="text-left" style="width: 90px;">Duration</th>
+                                    <th class="text-left" style="width: 100px;">Error Logs</th>
+                                    <th class="text-left" style="width: 180px;">Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {"".join(details_rows)}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab 3: Failed Tests -->
+                <div class="tab-content" id="tab-failed-tests">
+                    <div class="content-header">
+                        <div class="content-title">❌ Failed Tests & Tracebacks</div>
+                    </div>
+                    
+                    {"".join(failure_cards) if failures else '<div class="text-center text-muted" style="padding: 40px 0;"><h3 class="text-pass" style="font-size: 1.5rem; margin-bottom: 8px;">🎉 No Failures!</h3><p>All executed tests completed successfully.</p></div>'}
+                </div>
+
+                <!-- Tab 4: Execution Log -->
+                <div class="tab-content" id="tab-execution-log">
+                    <div class="content-header">
+                        <div class="content-title">📒 Chronological execution log</div>
+                    </div>
+                    <div class="toolbar">
+                        <div class="search-container">
+                            <svg class="search-icon-svg" viewBox="0 0 24 24">
+                                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                            </svg>
+                            <input type="text" class="search-input" id="search-log-input" placeholder="Search logs..." oninput="filterLogsTable()">
+                        </div>
+                        <div class="filter-group">
+                            <button class="filter-btn active" data-val="all" onclick="filterLogsLevel('all')">All</button>
+                            <button class="filter-btn" data-val="info" onclick="filterLogsLevel('info')">INFO</button>
+                            <button class="filter-btn" data-val="warn" onclick="filterLogsLevel('warn')">WARN</button>
+                            <button class="filter-btn" data-val="error" onclick="filterLogsLevel('error')">ERROR</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="log-table" id="logs-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-left" style="width: 180px;">Timestamp</th>
+                                    <th class="text-left" style="width: 95px;">Level</th>
+                                    <th class="text-left" style="width: 160px;">Category</th>
+                                    <th class="text-left">Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {"".join(log_rows)}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // Tab switching logic
+        function switchTab(tabId) {{
+            // Hide all tab contents
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(t => t.classList.remove('active'));
+
+            // Remove active class from menu items
+            const menuItems = document.querySelectorAll('.menu-item');
+            menuItems.forEach(item => item.classList.remove('active'));
+
+            // Show current tab
+            const activeTab = document.getElementById('tab-' + tabId);
+            if (activeTab) activeTab.classList.add('active');
+
+            // Set menu item active
+            const btn = document.querySelector(`button[onclick="switchTab('${{tabId}}')"]`);
+            if (btn) btn.classList.add('active');
+        }}
+
+        // Expandable test rows
+        function toggleRowDetail(no) {{
+            const detailRow = document.getElementById('detail-row-' + no);
+            const testRow = document.getElementById('test-row-' + no);
+            const btn = testRow.querySelector('.expand-btn');
+            
+            if (detailRow.style.display === 'none') {{
+                detailRow.style.display = 'table-row';
+                btn.textContent = '🔒 Hide';
+            }} else {{
+                detailRow.style.display = 'none';
+                btn.textContent = '🔍 Details';
+            }}
+        }}
+
+        // Copy traceback to clipboard
+        function copyTraceback(no) {{
+            const text = document.getElementById('trace-text-' + no).textContent;
+            navigator.clipboard.writeText(text).then(() => {{
+                const btn = document.querySelector(`#detail-row-${{no}} .copy-btn`);
+                const oldText = btn.textContent;
+                btn.textContent = 'Copied!';
+                btn.style.backgroundColor = 'var(--color-pass)';
+                btn.style.borderColor = 'var(--color-pass)';
+                btn.style.color = '#fff';
+                setTimeout(() => {{
+                    btn.textContent = oldText;
+                    btn.style.backgroundColor = '';
+                    btn.style.borderColor = '';
+                    btn.style.color = '';
+                }}, 2000);
+            }}).catch(err => {{
+                console.error('Failed to copy text: ', err);
+            }});
+        }}
+
+        // Details filtering
+        let currentStatusFilter = 'all';
+        function filterDetailsStatus(status) {{
+            currentStatusFilter = status;
+            
+            // Update filter buttons
+            const btns = document.querySelectorAll('#details-filter-group .filter-btn');
+            btns.forEach(b => {{
+                if (b.getAttribute('data-val') === status) b.classList.add('active');
+                else b.classList.remove('active');
+            }});
+
+            runDetailsFilter();
+        }}
+
+        function filterDetailsTable() {{
+            runDetailsFilter();
+        }}
+
+        function runDetailsFilter() {{
+            const query = document.getElementById('search-details-input').value.toLowerCase().trim();
+            const table = document.getElementById('details-table');
+            const rows = table.querySelectorAll('tbody > tr:not(.detail-row)');
+            
+            rows.forEach(row => {{
+                const status = row.getAttribute('data-status');
+                const no = row.id.replace('test-row-', '');
+                const detailRow = document.getElementById('detail-row-' + no);
+                
+                const cat = row.cells[1].textContent.toLowerCase();
+                const mod = row.cells[2].textContent.toLowerCase();
+                const name = row.cells[3].textContent.toLowerCase();
+                
+                const matchesStatus = (currentStatusFilter === 'all' || status === currentStatusFilter);
+                const matchesSearch = (!query || cat.includes(query) || mod.includes(query) || name.includes(query));
+                
+                if (matchesStatus && matchesSearch) {{
+                    row.style.display = 'table-row';
+                }} else {{
+                    row.style.display = 'none';
+                    if (detailRow) detailRow.style.display = 'none'; // collapse if hidden
+                    const btn = row.querySelector('.expand-btn');
+                    if (btn) btn.textContent = '🔍 Details';
+                }}
+            }});
+        }}
+
+        // Logs filtering
+        let currentLogLevelFilter = 'all';
+        function filterLogsLevel(lvl) {{
+            currentLogLevelFilter = lvl;
+            const btns = document.querySelectorAll('#tab-execution-log .filter-btn');
+            btns.forEach(b => {{
+                if (b.getAttribute('data-val') === lvl) b.classList.add('active');
+                else b.classList.remove('active');
+            }});
+            runLogsFilter();
+        }}
+
+        function filterLogsTable() {{
+            runLogsFilter();
+        }}
+
+        function runLogsFilter() {{
+            const query = document.getElementById('search-log-input').value.toLowerCase().trim();
+            const table = document.getElementById('logs-table');
+            const rows = table.querySelectorAll('tbody > tr');
+            
+            rows.forEach(row => {{
+                const level = row.getAttribute('data-level');
+                const msg = row.cells[3].textContent.toLowerCase();
+                const cat = row.cells[2].textContent.toLowerCase();
+                
+                const matchesLevel = (currentLogLevelFilter === 'all' || level === currentLogLevelFilter);
+                const matchesSearch = (!query || msg.includes(query) || cat.includes(query));
+                
+                if (matchesLevel && matchesSearch) {{
+                    row.style.display = 'table-row';
+                }} else {{
+                    row.style.display = 'none';
+                }}
+            }});
+        }}
+    </script>
+</body>
+</html>
+"""
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    print(f"[OK] Compiled HTML report template outputted successfully.")
+
+def main():
+    parser = argparse.ArgumentParser(description="Compile CrowdSense Excel reports to a premium HTML dashboard.")
+    parser.add_argument("--excel", "-e", help="Path to the Excel report. If omitted, uses the latest generated Excel report.")
+    parser.add_argument("--output", "-o", help="Path to write the output HTML. Defaults to reports/e2e_report.html")
+    args = parser.parse_args()
+
+    reports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+
+    excel_path = args.excel
+    if not excel_path:
+        excel_path = find_latest_excel_report(reports_dir)
+        if not excel_path:
+            # Check the root workspace
+            excel_path = find_latest_excel_report(os.path.dirname(reports_dir))
+            
+    if not excel_path or not os.path.exists(excel_path):
+        print(f"[ERROR] Excel report not found. Please specify it with --excel <path>")
+        sys.exit(1)
+
+    output_path = args.output
+    if not output_path:
+        output_path = os.path.join(reports_dir, "e2e_report.html")
+
+    data = parse_excel_report(excel_path)
+    generate_html_report(data, output_path)
+
+if __name__ == "__main__":
+    main()

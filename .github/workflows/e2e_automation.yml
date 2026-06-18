@@ -1,12 +1,10 @@
-name: 📊 CrowdSense E2E Report
+name: E2E Automation Testing
 
 # ─────────────────────────────────────────────────────────────
 #  Trigger: runs on every push to any branch,
 #           and on pull requests targeting main / master.
-#  Goal   : Execute all Selenium tests against the live
-#           GitHub Pages deployment, auto-generate the
-#           multi-sheet .xlsx report, and publish a rich
-#           final analysis summary inside GitHub Actions.
+#  Goal   : Execute E2E tests, generate Excel/HTML reports,
+#           and post a rich final analysis summary.
 # ─────────────────────────────────────────────────────────────
 on:
   push:
@@ -16,7 +14,7 @@ on:
 
 jobs:
   e2e-report:
-    name: Run E2E Tests & Generate XLSX Report
+    name: Run E2E Tests & Generate Reports
     runs-on: ubuntu-latest
 
     steps:
@@ -33,7 +31,6 @@ jobs:
           cache-dependency-path: tests/selenium_tests/requirements.txt
 
       # ── 3. Install dependencies ────────────────────────────
-      #   pytest-json-report is now listed in requirements.txt
       - name: 📦 Install Python Dependencies
         run: |
           pip install --upgrade pip
@@ -57,13 +54,6 @@ jobs:
           echo "GIT_BRANCH=${GITHUB_REF_NAME}"              >> $GITHUB_ENV
 
       # ── 7. Run all Selenium E2E tests ──────────────────────
-      #   • Xvfb provides a virtual display (belt-and-suspenders
-      #     alongside --headless=new which conftest.py enables
-      #     automatically when CI=true)
-      #   • --json-report saves machine-readable results for
-      #     the summary script to parse
-      #   • conftest.py auto-saves the .xlsx on session finish
-      #   • continue-on-error: true → report always uploaded
       - name: 🧪 Execute Selenium E2E Tests
         id: run_tests
         continue-on-error: true
@@ -106,14 +96,26 @@ jobs:
             --sha    "${{ env.GIT_SHA }}" \
             --xlsx   "${{ env.XLSX_NAME }}"
 
-      # ── 10. List reports (debug) ───────────────────────────
+      # ── 10. Compile Excel report to premium HTML ───────────
+      - name: 📊 Compile Excel Report to Premium HTML
+        if: always()
+        run: |
+          if [ "${{ env.XLSX_NAME }}" != "not_generated" ]; then
+            python tests/selenium_tests/compile_report.py \
+              --excel "tests/selenium_tests/reports/${{ env.XLSX_NAME }}" \
+              --output "tests/selenium_tests/reports/e2e_report.html"
+          else
+            echo "[WARN] No Excel report found to compile."
+          fi
+
+      # ── 11. List reports (debug) ───────────────────────────
       - name: 📋 List Generated Report Files
         if: always()
         run: |
           echo "=== Reports Directory ==="
           ls -lh tests/selenium_tests/reports/ || echo "No reports directory found"
 
-      # ── 11. Upload XLSX + JSON + log as artifacts ──────────
+      # ── 12. Upload XLSX + HTML + JSON + log as artifacts ───
       - name: 📤 Upload E2E Reports Artifact
         if: always()
         uses: actions/upload-artifact@v4
@@ -123,5 +125,6 @@ jobs:
             tests/selenium_tests/reports/*.xlsx
             tests/selenium_tests/reports/*.json
             tests/selenium_tests/reports/*.log
+            tests/selenium_tests/reports/*.html
           retention-days: 30
           if-no-files-found: warn
