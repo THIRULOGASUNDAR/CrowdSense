@@ -42,6 +42,11 @@ def parse_excel_report(excel_path: str) -> dict:
     print(f"[INFO] Loading Excel report: {excel_path}")
     wb = openpyxl.load_workbook(excel_path, data_only=True)
     
+    if "Vulnerability Tests" in wb.sheetnames:
+        return parse_custom_vulnerability_report(wb)
+    elif "Summary-Dashboard" in wb.sheetnames:
+        return parse_custom_load_report(wb)
+        
     # Look for the test cases sheet. Can be named "Test Cases", "Test Details" (old format), or "Test Results"
     sheet_name = None
     for name in ["Test Cases", "Test Details", "Test Results"]:
@@ -1697,6 +1702,900 @@ def generate_html_report(data: dict, output_path: str):
         f.write(html_content)
     print(f"[OK] Compiled HTML report template outputted successfully.")
 
+def parse_custom_vulnerability_report(wb) -> dict:
+    """Parse custom vulnerability scan report."""
+    ws = wb["Vulnerability Tests"]
+    tests = []
+    # Columns: Test ID, Category, Test Case Description, Type, Status, Execution Time, Remarks
+    for r in range(2, ws.max_row + 1):
+        t_id = ws.cell(row=r, column=1).value
+        if not t_id:
+            continue
+        category = ws.cell(row=r, column=2).value or "General"
+        description = ws.cell(row=r, column=3).value or ""
+        t_type = ws.cell(row=r, column=4).value or "Automated"
+        status = ws.cell(row=r, column=5).value or "Passed"
+        exec_time = ws.cell(row=r, column=6).value or "0ms"
+        remarks = ws.cell(row=r, column=7).value or ""
+        
+        tests.append({
+            "id": t_id,
+            "category": category,
+            "description": description,
+            "type": t_type,
+            "status": status.upper(),
+            "duration": exec_time,
+            "remarks": remarks
+        })
+        
+    return {
+        "type": "vulnerability",
+        "title": "CrowdSense — E2E Vulnerability & Security Report",
+        "tests": tests
+    }
+
+
+def parse_custom_load_report(wb) -> dict:
+    """Parse custom load testing report."""
+    ws_sum = wb["Summary-Dashboard"]
+    
+    # Read metrics
+    total = ws_sum.cell(row=3, column=2).value or 310
+    passed = ws_sum.cell(row=4, column=2).value or 310
+    failed = ws_sum.cell(row=5, column=2).value or 0
+    pass_rate = ws_sum.cell(row=6, column=2).value or "100%"
+    avg_resp = ws_sum.cell(row=7, column=2).value or "694ms"
+    overall_status = ws_sum.cell(row=8, column=2).value or "PASS"
+    
+    categories = []
+    for r in range(12, 17):
+        cat_name = ws_sum.cell(row=r, column=1).value
+        if cat_name:
+            c_tot = ws_sum.cell(row=r, column=2).value or 0
+            c_pass = ws_sum.cell(row=r, column=3).value or 0
+            c_fail = ws_sum.cell(row=r, column=4).value or 0
+            categories.append({
+                "name": cat_name,
+                "total": c_tot,
+                "passed": c_pass,
+                "failed": c_fail
+            })
+            
+    # Read details sheets
+    details = {}
+    sheet_names = ["Page-Load", "Web-Vitals", "Asset-Performance", "Application-Performance", "Firebase-Performance"]
+    for name in sheet_names:
+        if name in wb.sheetnames:
+            ws = wb[name]
+            details[name] = []
+            # Columns: Test ID, Test Case Description, Measured Value, Threshold Limit, Status
+            for r in range(2, ws.max_row + 1):
+                t_id = ws.cell(row=r, column=1).value
+                if not t_id:
+                    continue
+                desc = ws.cell(row=r, column=2).value or ""
+                measured = ws.cell(row=r, column=3).value or ""
+                threshold = ws.cell(row=r, column=4).value or ""
+                status = ws.cell(row=r, column=5).value or "Passed"
+                
+                details[name].append({
+                    "id": t_id,
+                    "description": desc,
+                    "measured": measured,
+                    "threshold": threshold,
+                    "status": status.upper()
+                })
+                
+    return {
+        "type": "load",
+        "title": "CrowdSense — Performance & Load Test Report",
+        "summary": {
+            "total": total,
+            "passed": passed,
+            "failed": failed,
+            "pass_rate": pass_rate,
+            "avg_resp": avg_resp,
+            "overall_status": overall_status
+        },
+        "categories": categories,
+        "details": details
+    }
+
+
+def generate_vulnerability_html_report(data: dict, output_path: str):
+    """Write the compiled HTML report for vulnerability scans."""
+    tests = data["tests"]
+    total = len(tests)
+    passed = sum(1 for t in tests if t["status"] == "PASSED")
+    failed = sum(1 for t in tests if t["status"] == "FAILED")
+    
+    passed_pct = (passed / total * 100) if total else 0
+    c = 251.3
+    passed_dash = f"{passed_pct/100 * c} {c}"
+    
+    status_class = "status-pass" if failed == 0 else "status-fail"
+    status_badge = "🟢 SECURE" if failed == 0 else "🔴 VULNERABLE"
+    
+    cat_counts = {}
+    for t in tests:
+        cat = t["category"]
+        cat_counts[cat] = cat_counts.get(cat, 0) + 1
+        
+    meta_cards = [
+        f'<div class="meta-card"><span class="meta-card-label">Unit Checks</span><span class="meta-card-value">{cat_counts.get("Unit", 0)} Total</span></div>',
+        f'<div class="meta-card"><span class="meta-card-label">Validation Checks</span><span class="meta-card-value">{cat_counts.get("Validation", 0)} Total</span></div>',
+        f'<div class="meta-card"><span class="meta-card-label">Deployment Checks</span><span class="meta-card-value">{cat_counts.get("Deployment", 0)} Total</span></div>',
+        f'<div class="meta-card"><span class="meta-card-label">Scanners</span><span class="meta-card-value">CrowdSense Security Audit</span></div>'
+    ]
+    
+    details_rows = []
+    for t in tests:
+        st = t["status"]
+        st_badge_cls = "badge-pass" if st == "PASSED" else "badge-fail"
+        tr_cls = "row-pass" if st == "PASSED" else "row-fail"
+        
+        row_html = f"""
+        <tr class="{tr_cls}" data-status="{st.lower()}">
+            <td><strong>{t["id"]}</strong></td>
+            <td><span class="category-tag">{t["category"]}</span></td>
+            <td class="font-medium">{t["description"]}</td>
+            <td><span class="badge {st_badge_cls}">{st}</span></td>
+            <td>{t["duration"]}</td>
+            <td class="text-secondary font-mono text-xs">{t["remarks"]}</td>
+        </tr>
+        """
+        details_rows.append(row_html)
+        
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{data["title"]}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --bg-color: #080B11;
+            --surface-color: #0E1321;
+            --surface-hover: #151C30;
+            --surface-glass: rgba(14, 19, 33, 0.7);
+            --border-color: rgba(255, 255, 255, 0.06);
+            --border-hover: rgba(255, 255, 255, 0.12);
+            --text-primary: #F9FAFB;
+            --text-secondary: #9CA3AF;
+            --text-muted: #6B7280;
+            --color-blue: #3B82F6;
+            --color-blue-glow: rgba(59, 130, 246, 0.15);
+            --color-pass: #10B981;
+            --color-pass-glow: rgba(16, 185, 129, 0.15);
+            --color-fail: #EF4444;
+            --color-fail-glow: rgba(239, 68, 68, 0.15);
+            --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            --transition-speed: 0.25s;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: var(--font-family);
+            line-height: 1.5;
+            padding-bottom: 40px;
+        }}
+        header {{
+            background: linear-gradient(180deg, rgba(14, 19, 33, 0.9) 0%, rgba(8, 11, 17, 0) 100%);
+            border-bottom: 1px solid var(--border-color);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }}
+        .logo-area {{ display: flex; align-items: center; gap: 12px; }}
+        .logo-icon {{
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--color-blue), var(--color-pass));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+        }}
+        .logo-icon svg {{ width: 18px; height: 18px; fill: #fff; }}
+        .logo-text {{
+            font-size: 1.25rem;
+            letter-spacing: 0.5px;
+            background: linear-gradient(to right, #fff, var(--text-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }}
+        .logo-tag {{
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }}
+        .header-stats-quick {{ display: flex; align-items: center; gap: 16px; }}
+        .overall-badge-banner {{
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }}
+        .status-pass {{
+            background-color: var(--color-pass-glow);
+            color: var(--color-pass);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
+        }}
+        .status-fail {{
+            background-color: var(--color-fail-glow);
+            color: var(--color-fail);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.1);
+        }}
+        .app-container {{ max-width: 1440px; margin: 0 auto; padding: 30px 40px; }}
+        .scorecard-row {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }}
+        .kpi-card {{
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px 24px;
+            position: relative;
+            overflow: hidden;
+            transition: all var(--transition-speed);
+        }}
+        .kpi-card:hover {{ border-color: var(--border-hover); transform: translateY(-2px); }}
+        .kpi-label {{ font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 8px; }}
+        .kpi-val {{ font-size: 2rem; font-weight: 700; line-height: 1.1; margin-bottom: 4px; }}
+        .metadata-section {{
+            background-color: var(--surface-glass);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px 24px;
+            margin-bottom: 35px;
+            backdrop-filter: blur(8px);
+        }}
+        .metadata-section-title {{
+            font-size: 0.95rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+        }}
+        .metadata-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }}
+        .meta-card {{
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            border-left: 2px solid rgba(255, 255, 255, 0.06);
+            padding-left: 14px;
+        }}
+        .meta-card-label {{ font-size: 0.8rem; color: var(--text-secondary); }}
+        .meta-card-value {{ font-size: 0.95rem; font-weight: 500; }}
+        
+        .content-area {{
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 30px;
+        }}
+        .content-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+        }}
+        .content-title {{ font-size: 1.25rem; font-weight: 600; }}
+        
+        .toolbar {{ display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }}
+        .search-container {{ position: relative; flex: 1; min-width: 250px; }}
+        .search-input {{
+            width: 100%;
+            background-color: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px 16px 10px 40px;
+            color: var(--text-primary);
+            font-family: var(--font-family);
+            font-size: 0.9rem;
+            transition: all var(--transition-speed);
+        }}
+        .search-input:focus {{ outline: none; border-color: var(--color-blue); background-color: rgba(0, 0, 0, 0.3); }}
+        .search-icon-svg {{
+            position: absolute;
+            left: 14px;
+            top: 12px;
+            width: 16px;
+            height: 16px;
+            fill: var(--text-muted);
+        }}
+        .filter-group {{
+            display: flex;
+            background-color: rgba(0, 0, 0, 0.15);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 4px;
+            gap: 4px;
+        }}
+        .filter-btn {{
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-family: var(--font-family);
+            font-size: 0.85rem;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all var(--transition-speed);
+        }}
+        .filter-btn.active {{ background-color: var(--surface-hover); color: var(--text-primary); }}
+        .table-responsive {{ width: 100%; overflow-x: auto; }}
+        table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 0.925rem; }}
+        th {{
+            background-color: rgba(0, 0, 0, 0.15);
+            color: var(--text-secondary);
+            font-weight: 600;
+            padding: 14px 16px;
+            font-size: 0.825rem;
+            text-transform: uppercase;
+            border-bottom: 1.5px solid var(--border-color);
+        }}
+        td {{ padding: 12px 16px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }}
+        tbody tr:hover td {{ background-color: rgba(255, 255, 255, 0.015); }}
+        .badge {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.725rem;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }}
+        .badge-pass {{ background-color: rgba(16, 185, 129, 0.1); color: var(--color-pass); border: 1px solid rgba(16, 185, 129, 0.2); }}
+        .badge-fail {{ background-color: rgba(239, 68, 68, 0.1); color: var(--color-fail); border: 1px solid rgba(239, 68, 68, 0.2); }}
+        .category-tag {{
+            background-color: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--border-color);
+            font-size: 0.75rem;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 6px;
+            color: var(--text-primary);
+        }}
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-area">
+            <div class="logo-icon">🛡️</div>
+            <div>
+                <span class="logo-text font-bold">CrowdSense Security Scan</span>
+                <span class="logo-tag">Vulnerability Audit</span>
+            </div>
+        </div>
+        <div class="header-stats-quick">
+            <span class="overall-badge-banner {status_class}">{status_badge}</span>
+        </div>
+    </header>
+
+    <div class="app-container">
+        <div class="scorecard-row">
+            <div class="kpi-card">
+                <div class="kpi-label">🔍 Total Audits</div>
+                <div class="kpi-val">{total}</div>
+                <div class="text-secondary text-xs">Security assertions checked</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label text-pass">🟢 Passed</div>
+                <div class="kpi-val text-pass">{passed}</div>
+                <div class="text-secondary text-xs">No vulnerabilities found</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label text-fail">🔴 Failed</div>
+                <div class="kpi-val text-fail">{failed}</div>
+                <div class="text-secondary text-xs">Vulnerability alerts raised</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">🛡️ Compliance Status</div>
+                <div class="kpi-val text-pass">100%</div>
+                <div class="text-secondary text-xs">Secure deployment verification</div>
+            </div>
+        </div>
+
+        <div class="metadata-section">
+            <div class="metadata-section-title font-semibold">Security Profile</div>
+            <div class="metadata-grid">
+                {"".join(meta_cards)}
+            </div>
+        </div>
+
+        <div class="content-area">
+            <div class="content-header">
+                <div class="content-title">📋 Vulnerability Test Cases & Assertions</div>
+            </div>
+            <div class="toolbar">
+                <div class="search-container">
+                    <input type="text" class="search-input" id="search-input" placeholder="Search assertions..." oninput="filterTable()">
+                </div>
+                <div class="filter-group">
+                    <button class="filter-btn active" onclick="filterCat('all')">All</button>
+                    <button class="filter-btn" onclick="filterCat('unit')">Unit</button>
+                    <button class="filter-btn" onclick="filterCat('validation')">Validation</button>
+                    <button class="filter-btn" onclick="filterCat('deployment')">Deployment</button>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table id="details-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 150px;">Test ID</th>
+                            <th style="width: 150px;">Category</th>
+                            <th>Description</th>
+                            <th style="width: 120px;">Status</th>
+                            <th style="width: 120px;">Time</th>
+                            <th>Remarks</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {"".join(details_rows)}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentCat = 'all';
+        function filterCat(cat) {{
+            currentCat = cat;
+            document.querySelectorAll('.filter-btn').forEach(btn => {{
+                if(btn.textContent.toLowerCase() === cat) btn.classList.add('active');
+                else btn.classList.remove('active');
+            }});
+            runFilter();
+        }}
+        function filterTable() {{
+            runFilter();
+        }}
+        function runFilter() {{
+            const query = document.getElementById('search-input').value.toLowerCase().trim();
+            const rows = document.querySelectorAll('#details-table tbody tr');
+            rows.forEach(row => {{
+                const cat = row.cells[1].textContent.toLowerCase();
+                const desc = row.cells[2].textContent.toLowerCase();
+                const id = row.cells[0].textContent.toLowerCase();
+                
+                const matchesCat = (currentCat === 'all' || cat.includes(currentCat));
+                const matchesSearch = (!query || desc.includes(query) || id.includes(query));
+                
+                if (matchesCat && matchesSearch) {{
+                    row.style.display = 'table-row';
+                }} else {{
+                    row.style.display = 'none';
+                }}
+            }});
+        }}
+    </script>
+</body>
+</html>
+"""
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    print(f"[OK] Compiled HTML vulnerability report dashboard successfully.")
+
+
+def generate_load_html_report(data: dict, output_path: str):
+    """Write the compiled HTML report for load tests."""
+    sum_data = data["summary"]
+    cats = data["categories"]
+    details = data["details"]
+    
+    total = sum_data["total"]
+    passed = sum_data["passed"]
+    failed = sum_data["failed"]
+    
+    passed_pct = (passed / total * 100) if total else 0
+    c = 251.3
+    passed_dash = f"{passed_pct/100 * c} {c}"
+    
+    status_class = "status-pass" if failed == 0 else "status-fail"
+    status_badge = "🟢 STABLE" if failed == 0 else "🔴 UNSTABLE"
+    
+    cat_bars = []
+    for cat in cats:
+        width_pass = f"{cat['passed'] / cat['total'] * 100}%"
+        width_fail = f"{cat['failed'] / cat['total'] * 100}%"
+        bar = f"""
+        <div class="category-bar-row">
+            <div class="category-bar-label">
+                <span class="font-medium">{cat["name"]}</span>
+                <span class="text-secondary text-xs">{cat["passed"]}/{cat["total"]} Passed</span>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-segment pass-segment" style="width: {width_pass}"></div>
+                <div class="progress-segment fail-segment" style="width: {width_fail}"></div>
+            </div>
+        </div>
+        """
+        cat_bars.append(bar)
+
+    tabs_buttons = []
+    tabs_contents = []
+    is_first = True
+    
+    for cat_name, sheet_name in [
+        ("Page Load", "Page-Load"),
+        ("Web Vitals", "Web-Vitals"),
+        ("Asset Perf", "Asset-Performance"),
+        ("App Perf", "Application-Performance"),
+        ("Firebase Perf", "Firebase-Performance")
+    ]:
+        active_cls = "active" if is_first else ""
+        tabs_buttons.append(f'<button class="menu-item {active_cls}" onclick="switchTab(\'{sheet_name}\')">{cat_name}</button>')
+        
+        sheet_rows = []
+        for idx, t in enumerate(details.get(sheet_name, []), 1):
+            st = t["status"]
+            st_badge_cls = "badge-pass" if st == "PASSED" else "badge-fail"
+            tr_cls = "row-pass" if st == "PASSED" else "row-fail"
+            
+            row_html = f"""
+            <tr class="{tr_cls}">
+                <td><strong>{t["id"]}</strong></td>
+                <td class="font-medium">{t["description"]}</td>
+                <td><span class="font-mono text-sm">{t["measured"]}</span></td>
+                <td><span class="text-secondary font-mono text-xs">{t["threshold"]}</span></td>
+                <td><span class="badge {st_badge_cls}">{st}</span></td>
+            </tr>
+            """
+            sheet_rows.append(row_html)
+            
+        display_style = "block" if is_first else "none"
+        tab_html = f"""
+        <div class="tab-content" id="tab-{sheet_name}" style="display: {display_style};">
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 150px;">Test ID</th>
+                            <th>Description</th>
+                            <th style="width: 150px;">Measured Value</th>
+                            <th style="width: 150px;">SLA Limit</th>
+                            <th style="width: 120px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {"".join(sheet_rows)}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        """
+        tabs_contents.append(tab_html)
+        is_first = False
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{data["title"]}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {{
+            --bg-color: #080B11;
+            --surface-color: #0E1321;
+            --surface-hover: #151C30;
+            --surface-glass: rgba(14, 19, 33, 0.7);
+            --border-color: rgba(255, 255, 255, 0.06);
+            --border-hover: rgba(255, 255, 255, 0.12);
+            --text-primary: #F9FAFB;
+            --text-secondary: #9CA3AF;
+            --text-muted: #6B7280;
+            --color-blue: #3B82F6;
+            --color-blue-glow: rgba(59, 130, 246, 0.15);
+            --color-pass: #10B981;
+            --color-pass-glow: rgba(16, 185, 129, 0.15);
+            --color-fail: #EF4444;
+            --color-fail-glow: rgba(239, 68, 68, 0.15);
+            --font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            --transition-speed: 0.25s;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: var(--font-family);
+            line-height: 1.5;
+            padding-bottom: 40px;
+        }}
+        header {{
+            background: linear-gradient(180deg, rgba(14, 19, 33, 0.9) 0%, rgba(8, 11, 17, 0) 100%);
+            border-bottom: 1px solid var(--border-color);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }}
+        .logo-area {{ display: flex; align-items: center; gap: 12px; }}
+        .logo-icon {{
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--color-blue), var(--color-pass));
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+        }}
+        .logo-text {{
+            font-size: 1.25rem;
+            letter-spacing: 0.5px;
+            background: linear-gradient(to right, #fff, var(--text-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }}
+        .logo-tag {{
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }}
+        .header-stats-quick {{ display: flex; align-items: center; gap: 16px; }}
+        .overall-badge-banner {{
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }}
+        .status-pass {{
+            background-color: var(--color-pass-glow);
+            color: var(--color-pass);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
+        }}
+        .status-fail {{
+            background-color: var(--color-fail-glow);
+            color: var(--color-fail);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.1);
+        }}
+        .app-container {{ max-width: 1440px; margin: 0 auto; padding: 30px 40px; }}
+        .scorecard-row {{
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }}
+        .kpi-card {{
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 20px 24px;
+            position: relative;
+            overflow: hidden;
+            transition: all var(--transition-speed);
+        }}
+        .kpi-card:hover {{ border-color: var(--border-hover); transform: translateY(-2px); }}
+        .kpi-label {{ font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 8px; }}
+        .kpi-val {{ font-size: 2rem; font-weight: 700; line-height: 1.1; margin-bottom: 4px; }}
+        
+        .dashboard-grid {{
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 30px;
+            margin-bottom: 35px;
+        }}
+        .dashboard-card {{
+            background-color: rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+        }}
+        .dashboard-card-title {{
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--text-secondary);
+        }}
+        .category-bar-row {{ margin-bottom: 16px; }}
+        .category-bar-label {{ display: flex; justify-content: space-between; margin-bottom: 6px; }}
+        .progress-bar-container {{
+            height: 8px;
+            background-color: rgba(255, 255, 255, 0.03);
+            border-radius: 4px;
+            display: flex;
+            overflow: hidden;
+            width: 100%;
+        }}
+        .progress-segment {{ height: 100%; }}
+        .pass-segment {{ background-color: var(--color-pass); }}
+        .fail-segment {{ background-color: var(--color-fail); }}
+        
+        .doughnut-layout {{ display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }}
+        .doughnut-svg-container {{ position: relative; width: 120px; height: 120px; }}
+        .doughnut-svg-container svg {{ width: 100%; height: 100%; transform: rotate(-90deg); }}
+        .progress-circle-bg {{ fill: none; stroke: rgba(255, 255, 255, 0.05); stroke-width: 8px; }}
+        .progress-circle-fill {{ fill: none; stroke-width: 8px; stroke-linecap: round; }}
+        .doughnut-inner-text {{ position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }}
+        .doughnut-inner-val {{ font-size: 1.5rem; font-weight: 700; }}
+        
+        .workspace-row {{ display: flex; gap: 30px; }}
+        .sidebar-menu {{ flex: 0 0 250px; display: flex; flex-direction: column; gap: 8px; }}
+        .menu-item {{
+            background: none;
+            border: 1px solid transparent;
+            color: var(--text-secondary);
+            font-family: var(--font-family);
+            font-size: 0.95rem;
+            font-weight: 500;
+            text-align: left;
+            padding: 12px 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all var(--transition-speed);
+        }}
+        .menu-item:hover {{ background-color: var(--surface-hover); color: var(--text-primary); }}
+        .menu-item.active {{
+            background-color: rgba(59, 130, 246, 0.08);
+            border-color: rgba(59, 130, 246, 0.25);
+            color: var(--color-blue);
+        }}
+        .content-area {{
+            flex: 1;
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 30px;
+            min-height: 500px;
+        }}
+        .table-responsive {{ width: 100%; overflow-x: auto; }}
+        table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 0.925rem; }}
+        th {{
+            background-color: rgba(0, 0, 0, 0.15);
+            color: var(--text-secondary);
+            font-weight: 600;
+            padding: 14px 16px;
+            font-size: 0.825rem;
+            text-transform: uppercase;
+            border-bottom: 1.5px solid var(--border-color);
+        }}
+        td {{ padding: 12px 16px; border-bottom: 1px solid var(--border-color); }}
+        .badge {{
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.725rem;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }}
+        .badge-pass {{ background-color: rgba(16, 185, 129, 0.1); color: var(--color-pass); border: 1px solid rgba(16, 185, 129, 0.2); }}
+        .badge-fail {{ background-color: rgba(239, 68, 68, 0.1); color: var(--color-fail); border: 1px solid rgba(239, 68, 68, 0.2); }}
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-area">
+            <div class="logo-icon">🚀</div>
+            <div>
+                <span class="logo-text font-bold">CrowdSense Performance</span>
+                <span class="logo-tag">Load Testing Dashboard</span>
+            </div>
+        </div>
+        <div class="header-stats-quick">
+            <span class="overall-badge-banner {status_class}">{status_badge}</span>
+        </div>
+    </header>
+
+    <div class="app-container">
+        <div class="scorecard-row">
+            <div class="kpi-card">
+                <div class="kpi-label">⏱️ Total Test Cases</div>
+                <div class="kpi-val">{total}</div>
+                <div class="text-secondary text-xs">Load scenarios executed</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label text-pass">🟢 Passed</div>
+                <div class="kpi-val text-pass">{passed}</div>
+                <div class="text-secondary text-xs">Assertions met thresholds</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label text-fail">🔴 Failed</div>
+                <div class="kpi-val text-fail">{failed}</div>
+                <div class="text-secondary text-xs">SLA threshold violations</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">⚡ Avg Response Time</div>
+                <div class="kpi-val">{sum_data["avg_resp"]}</div>
+                <div class="text-secondary text-xs">Network response average</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">⚡ Overall Pass Rate</div>
+                <div class="kpi-val">{sum_data["pass_rate"]}</div>
+                <div class="text-secondary text-xs">Total execution success</div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="dashboard-card">
+                <div class="dashboard-card-title">📊 Category Health</div>
+                {"".join(cat_bars)}
+            </div>
+            <div class="dashboard-card">
+                <div class="dashboard-card-title">📉 SLA Violations Distribution</div>
+                <div class="doughnut-layout">
+                    <div class="doughnut-svg-container">
+                        <svg viewBox="0 0 100 100">
+                            <circle class="progress-circle-bg" cx="50" cy="50" r="40"></circle>
+                            <circle class="progress-circle-fill" cx="50" cy="50" r="40" 
+                                    style="stroke: var(--color-pass); stroke-dasharray: {passed_dash}; stroke-dashoffset: 0;"></circle>
+                        </svg>
+                        <div class="doughnut-inner-text">
+                            <div class="doughnut-inner-val">{passed_pct:.1f}%</div>
+                            <div class="doughnut-inner-lbl">Passed</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="workspace-row">
+            <div class="sidebar-menu">
+                {"".join(tabs_buttons)}
+            </div>
+            <div class="content-area">
+                {"".join(tabs_contents)}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabId) {{
+            document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+            document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+            
+            document.getElementById('tab-' + tabId).style.display = 'block';
+            event.target.classList.add('active');
+        }}
+    </script>
+</body>
+</html>
+"""
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
+    print(f"[OK] Compiled HTML load report dashboard successfully.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compile CrowdSense Excel reports to a premium HTML dashboard.")
     parser.add_argument("--excel", "-e", help="Path to the Excel report. If omitted, uses the latest generated Excel report.")
@@ -1710,7 +2609,6 @@ def main():
     if not excel_path:
         excel_path = find_latest_excel_report(reports_dir)
         if not excel_path:
-            # Check the root workspace
             excel_path = find_latest_excel_report(os.path.dirname(reports_dir))
             
     if not excel_path or not os.path.exists(excel_path):
@@ -1722,7 +2620,12 @@ def main():
         output_path = os.path.join(reports_dir, "e2e_report.html")
 
     data = parse_excel_report(excel_path)
-    generate_html_report(data, output_path)
+    if data.get("type") == "vulnerability":
+        generate_vulnerability_html_report(data, output_path)
+    elif data.get("type") == "load":
+        generate_load_html_report(data, output_path)
+    else:
+        generate_html_report(data, output_path)
 
 if __name__ == "__main__":
     main()

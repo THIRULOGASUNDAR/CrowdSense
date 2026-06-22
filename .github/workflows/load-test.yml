@@ -3,7 +3,7 @@ name: Load Test
 # ─────────────────────────────────────────────────────────────────────────────
 #  Trigger: push to main/master, pull requests to main/master,
 #           or manual trigger via workflow_dispatch.
-#  Goal   : Run 400 read-only load tests (TC341–TC740) against the live
+#  Goal   : Run 310 read-only load tests (TC-LOAD-PAGE-001 to TC-LOAD-FB-062) against the live
 #           CrowdSense GitHub Pages deployment. No browser required —
 #           pure HTTP/SSL/threading checks only.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ on:
 
 jobs:
   load-test:
-    name: 🚀 CrowdSense Load Test — 400 Read-Only Tests
+    name: 🚀 CrowdSense Load Test — 310 Read-Only Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -57,7 +57,7 @@ jobs:
           echo "GIT_BRANCH=${GITHUB_REF_NAME}"            >> $GITHUB_ENV
 
       # ── 6. Run Load Tests (No Browser Needed) ───────────────────────────────
-      - name: 🧪 Execute 400 Read-Only Load Tests (TC341–TC740)
+      - name: 🧪 Execute 310 Read-Only Load Tests
         id: run_load_tests
         env:
           CI: "true"
@@ -107,19 +107,14 @@ jobs:
           | 🔖 Commit     | \`${{ env.GIT_SHA }}\` |
           | 📁 Report     | \`${{ env.XLSX_NAME }}\` |
 
-          ### 📋 Test Categories (40 tests each)
+          ### 📋 Test Categories (62 tests each)
           | # | Category | TC Range |
           |---|----------|----------|
-          | 1 | HTTP Availability | TC341–TC380 |
-          | 2 | Static Asset Loading | TC381–TC420 |
-          | 3 | Response Time & SLA | TC421–TC460 |
-          | 4 | HTML Content Depth | TC461–TC500 |
-          | 5 | HTTP Header Audit | TC501–TC540 |
-          | 6 | SSL/TLS Deep Inspection | TC541–TC580 |
-          | 7 | Sensitive Path Hardening | TC581–TC620 |
-          | 8 | Concurrent Request Stability | TC621–TC660 |
-          | 9 | Content Delivery Consistency | TC661–TC700 |
-          | 10 | Structural & Suite Integrity | TC701–TC740 |
+          | 1 | Page Load Performance | TC-LOAD-PAGE-001 to TC-LOAD-PAGE-062 |
+          | 2 | Web Vitals | TC-LOAD-VIT-001 to TC-LOAD-VIT-062 |
+          | 3 | Asset Performance | TC-LOAD-AST-001 to TC-LOAD-AST-062 |
+          | 4 | Application Performance | TC-LOAD-APP-001 to TC-LOAD-APP-062 |
+          | 5 | Firebase Performance | TC-LOAD-FB-001 to TC-LOAD-FB-062 |
 
           > ✅ All tests are **read-only** — no browser, no login, no data writes.
           > Target: **https://thirulogasundar.github.io/CrowdSense**
@@ -159,11 +154,11 @@ jobs:
           if-no-files-found: warn
 
       # ── 12. Fail the job if any tests failed ─────────────────────────────────
-      - name: ✅ Assert All 400 Tests Passed
+      - name: ✅ Assert All 310 Tests Passed
         if: always()
         run: |
           if [ "${{ env.LOAD_EXIT }}" != "0" ]; then
             echo "❌ Load tests failed! Check the report artifact for details."
             exit 1
           fi
-          echo "✅ All 400 load tests passed successfully!"
+          echo "✅ All 310 load tests passed successfully!"
