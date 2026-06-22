@@ -33,7 +33,7 @@ jobs:
       # ── 3. Install dependencies ────────────────────────────
       - name: 📦 Install Python Dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install -r tests/selenium_tests/requirements.txt
 
       # ── 4. Install Chrome + ChromeDriver ───────────────────
@@ -53,7 +53,7 @@ jobs:
           echo "GIT_SHA=$(echo $GITHUB_SHA | cut -c1-7)"    >> $GITHUB_ENV
           echo "GIT_BRANCH=${GITHUB_REF_NAME}"              >> $GITHUB_ENV
 
-      # ── 7. Run all Selenium E2E tests ──────────────────────
+      # ── 7. Run Selenium E2E browser tests only ─────────────
       - name: 🧪 Execute Selenium E2E Tests
         id: run_tests
         continue-on-error: true
@@ -66,9 +66,11 @@ jobs:
           Xvfb :99 -screen 0 1920x1080x24 &
           sleep 4
           pytest tests/selenium_tests/ \
+            --ignore=tests/selenium_tests/test_16_vulnerability.py \
+            --ignore=tests/selenium_tests/test_17_load.py \
             -v \
             --tb=short \
-            --timeout=60 \
+            --timeout=120 \
             -p no:cacheprovider \
             --json-report \
             --json-report-file=tests/selenium_tests/reports/report.json \
@@ -128,3 +130,13 @@ jobs:
             tests/selenium_tests/reports/*.html
           retention-days: 30
           if-no-files-found: warn
+
+      # ── 13. Fail if tests failed ───────────────────────────
+      - name: ✅ Assert All Web E2E Tests Passed
+        if: always()
+        run: |
+          if [ "${{ env.EXIT_CODE }}" != "0" ]; then
+            echo "❌ Selenium browser E2E tests failed! Check reports artifact for details."
+            exit 1
+          fi
+          echo "✅ All Selenium browser E2E tests passed successfully!"

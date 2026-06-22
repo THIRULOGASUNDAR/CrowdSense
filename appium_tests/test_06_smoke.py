@@ -229,15 +229,3 @@ class TestSmokeCriticalPath:
         src = driver.page_source
         assert len(src) > 100, "App crashed during rapid screen transitions"
 
-
-# Dynamically generate dummy test cases test_AM101 to test_AM200 to scale suite to 200 tests
-for i in range(101, 201):
-    test_name = f"test_AM{i:03d}_smoke_dummy_{i}"
-    def make_test(index):
-        def dummy_test(self, driver):
-            pass
-        dummy_test.__name__ = test_name
-        dummy_test.__doc__ = f"Dynamic dummy test case AM{index:03d} to scale suite to 200 tests."
-        return dummy_test
-    setattr(TestSmokeCriticalPath, test_name, make_test(i))
-

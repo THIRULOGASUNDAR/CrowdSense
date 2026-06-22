@@ -119,6 +119,12 @@ def _get_category(nodeid: str) -> str:
         "test_04_profile_settings":  "Profile & Settings",
         "test_05_travel_planner":    "Travel Planner & Favorites",
         "test_06_smoke":             "Smoke Tests",
+        "test_07_favorites":         "Favorites & Saved Items",
+        "test_08_crowd_report":      "Crowd Intelligence Reports",
+        "test_09_place_details":     "Landmarks & Place Details",
+        "test_10_search_advanced":   "Advanced Search & Filters",
+        "test_11_ui_regression":     "UI Themes & Regression",
+        "test_12_extended_smoke":    "Extended Smoke Verification",
     }
     for key, cat in mapping.items():
         if key in nodeid:
