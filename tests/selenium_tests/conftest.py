@@ -244,10 +244,8 @@ def _generate_vulnerability_xlsx_report(ts):
 
     ws.freeze_panes = "A2"
     
-    fname = os.path.join(REPORT_DIR, f"Vulnerability_Scan_Report_{ts}.xlsx")
+    fname = os.path.join(REPORT_DIR, "Vulnerability_Scan_Report.xlsx")
     wb.save(fname)
-    # Also save as the static report file
-    wb.save(os.path.join(REPORT_DIR, "PayBuddy_Vulnerability_Report.xlsx"))
     print(f"\n[REPORT SAVED] {fname}\n")
 
 
@@ -441,10 +439,8 @@ def _generate_load_xlsx_report(ts):
             
         ws_cat.freeze_panes = "A2"
 
-    fname = os.path.join(REPORT_DIR, f"Load_Test_Report_{ts}.xlsx")
+    fname = os.path.join(REPORT_DIR, "Load_Test_Report.xlsx")
     wb.save(fname)
-    # Also save as the static report file
-    wb.save(os.path.join(REPORT_DIR, "Load_Test_Report.xlsx"))
     print(f"\n[REPORT SAVED] {fname}\n")
 
 
