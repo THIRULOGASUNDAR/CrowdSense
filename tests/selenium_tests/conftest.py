@@ -239,7 +239,6 @@ def driver():
     opts.add_argument("--no-sandbox")
     opts.add_argument("--log-level=3")
     opts.add_argument("--disable-gpu")
-    opts.add_argument("--remote-debugging-port=9222")
     opts.add_experimental_option("excludeSwitches", ["enable-logging"])
 
     # Auto-enable headless mode in CI (GitHub Actions sets CI=true).
