@@ -40,8 +40,10 @@ jobs:
           pip install -r tests/selenium_tests/requirements.txt
 
       # ── 4. Create Reports Directory ─────────────────────────────────────────
-      - name: 📁 Create Reports Directory
-        run: mkdir -p tests/selenium_tests/reports
+      - name: 📁 Create Reports Directory & Clean old reports
+        run: |
+          mkdir -p tests/selenium_tests/reports
+          rm -f tests/selenium_tests/reports/*
 
       # ── 5. Capture Run Metadata ─────────────────────────────────────────────
       - name: 🏷️ Capture Run Metadata

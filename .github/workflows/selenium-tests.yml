@@ -43,8 +43,10 @@ jobs:
           chrome-version: stable
 
       # ── 5. Ensure reports directory exists ─────────────────
-      - name: 📁 Create Reports Directory
-        run: mkdir -p tests/selenium_tests/reports
+      - name: 📁 Create Reports Directory & Clean old reports
+        run: |
+          mkdir -p tests/selenium_tests/reports
+          rm -f tests/selenium_tests/reports/*
 
       # ── 6. Capture metadata ────────────────────────────────
       - name: 🏷️ Capture Run Metadata

@@ -302,12 +302,13 @@ jobs:
 
       # ── 11. Create Reports Directory ───────────────────────
       # Creates target folder for report files. Switched to powershell.
-      - name: 📁 Create Reports Directory
+      - name: 📁 Create Reports Directory & Clean old reports
         shell: powershell
         run: |
           if (-not (Test-Path "appium_tests/reports")) {
               New-Item -ItemType Directory -Path "appium_tests/reports" -Force
           }
+          Remove-Item -Path "appium_tests/reports/*" -Force -ErrorAction SilentlyContinue
 
       # ── 12. Capture Metadata ───────────────────────────────
       # Saves current execution timestamp, git SHA, and branch name into GITHUB_ENV.
