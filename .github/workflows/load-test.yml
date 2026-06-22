@@ -144,7 +144,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: "CrowdSense-Load-Test-Report_${{ env.GIT_BRANCH }}_${{ env.RUN_TS }}_${{ env.GIT_SHA }}"
+          name: "load-test-report"
           path: |
             tests/selenium_tests/reports/load_report.json
             tests/selenium_tests/reports/load_ci_run.log
