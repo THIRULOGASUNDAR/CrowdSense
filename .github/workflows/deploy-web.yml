@@ -1,66 +1,63 @@
 name: Deploy Flutter Web to GitHub Pages
 
 # ─────────────────────────────────────────────────────────────
-#  Trigger: runs on every push to main (source of truth).
-#  Goal   : Build the Flutter web app and publish it to the
-#           gh-pages branch so that:
-#             • https://thirulogasundar.github.io/CrowdSense
-#               always reflects the latest UI changes.
-#             • Selenium / load / vulnerability tests always
-#               test the current version.
-#  Note   : This workflow ONLY builds & deploys — it does NOT
-#            run any tests, so existing workflows are unaffected.
+#  Trigger: runs on every push to main.
+#  Deploys build output directly to the gh-pages branch using
+#  a plain git push — no third-party deploy actions needed.
 # ─────────────────────────────────────────────────────────────
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:   # allow manual trigger
+  workflow_dispatch:
 
 permissions:
-  contents: write      # needed to push to gh-pages branch
+  contents: write
 
 jobs:
   build-and-deploy:
-    name: 🏗️ Build Flutter Web & 🚀 Deploy to GitHub Pages
+    name: Build Flutter Web & Deploy to gh-pages
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout source ─────────────────────────────────
-      - name: ⬇️ Checkout Repository
+      # 1. Checkout source
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # ── 2. Flutter SDK setup ───────────────────────────────
-      - name: 🦋 Setup Flutter SDK
+      # 2. Flutter SDK
+      - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      # ── 3. Install dependencies ────────────────────────────
-      - name: 📦 Flutter pub get
+      # 3. Install dependencies
+      - name: Flutter pub get
         working-directory: frontend
         run: flutter pub get
 
-      # ── 4. Build Flutter web (release) ────────────────────
-      #   --base-href must match the GitHub Pages sub-path.
-      #   For a user/org pages repo at /<repo-name>/ use that path.
-      - name: 🔨 Build Flutter Web (Release)
+      # 4. Build Flutter web (release)
+      - name: Build Flutter Web (Release)
         working-directory: frontend
         run: |
           flutter build web --release \
-            --base-href /CrowdSense/ \
-            --no-wasm-dry-run
+            --base-href /CrowdSense/
 
-      # ── 5. Add .nojekyll so folders starting with _ work ──
-      - name: 📄 Add .nojekyll
+      # 5. Add .nojekyll so folders starting with _ work
+      - name: Add .nojekyll
         run: touch frontend/build/web/.nojekyll
 
-      # ── 6. Deploy to gh-pages branch ──────────────────────
-      - name: 🚀 Deploy to GitHub Pages (gh-pages branch)
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: frontend/build/web
-          publish_branch: gh-pages
-          commit_message: "Deploy Flutter web build from ${{ github.sha }}"
-          force_orphan: false
+      # 6. Deploy — git push build output to gh-pages branch
+      - name: Deploy to gh-pages branch
+        run: |
+          cd frontend/build/web
+
+          git init
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git commit -m "Deploy Flutter web build from ${{ github.sha }}"
+
+          git push --force \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" \
+            HEAD:gh-pages
