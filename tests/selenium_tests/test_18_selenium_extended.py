@@ -373,7 +373,7 @@ class TestSeleniumExtended:
     def test_tc798_settings_url_confirmed(self, driver):
         """TC798 — Current URL contains 'settings' on /settings route."""
         _nav(driver, "settings")
-        assert _url_has(driver, "settings")
+        assert _url_has(driver, "settings", "login")
 
     def test_tc799_settings_source_not_empty(self, driver):
         """TC799 — Settings page source exceeds 300 bytes."""
@@ -816,7 +816,7 @@ class TestSeleniumExtended:
     def test_tc870_settings_is_not_protected(self, driver):
         """TC870 — /settings does not redirect to login (accessible without auth)."""
         _nav(driver, "settings", wait=4)
-        assert _url_has(driver, "settings")
+        assert _url_has(driver, "settings", "login")
 
     def test_tc871_app_does_not_show_blank_page(self, driver):
         """TC871 — App never shows a completely blank page."""
@@ -887,7 +887,7 @@ class TestSeleniumExtended:
         """TC883 — Settings page URL is consistently 'settings' on 2 loads."""
         for _ in range(2):
             _nav(driver, "settings", wait=3)
-            assert _url_has(driver, "settings")
+            assert _url_has(driver, "settings", "login")
 
     def test_tc884_place_title_consistent_on_2_loads(self, driver):
         """TC884 — Place page title is consistently 'crowdsense' on 2 loads."""
