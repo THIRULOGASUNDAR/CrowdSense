@@ -122,7 +122,7 @@ class PlaceProvider extends ChangeNotifier {
         crowdScore: 45,
         rating: 4.8,
         totalReviews: 1250,
-        thumbnailUrl: 'https://picsum.photos/seed/park1/400/300',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1518235506717-e1ed3306a89b?w=600&auto=format&fit=crop&q=80',
       ),
       PlaceModel(
         id: 'mock_2',
@@ -135,7 +135,7 @@ class PlaceProvider extends ChangeNotifier {
         crowdScore: 85,
         rating: 4.7,
         totalReviews: 3200,
-        thumbnailUrl: 'https://picsum.photos/seed/tower1/400/300',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=600&auto=format&fit=crop&q=80',
       ),
       PlaceModel(
         id: 'mock_3',
@@ -148,7 +148,7 @@ class PlaceProvider extends ChangeNotifier {
         crowdScore: 25,
         rating: 4.6,
         totalReviews: 980,
-        thumbnailUrl: 'https://picsum.photos/seed/eye1/400/300',
+        thumbnailUrl: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?w=600&auto=format&fit=crop&q=80',
       ),
     ];
 

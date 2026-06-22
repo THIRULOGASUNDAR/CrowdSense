@@ -19,13 +19,28 @@ class PlaceDetailsScreen extends StatefulWidget {
   State<PlaceDetailsScreen> createState() => _PlaceDetailsScreenState();
 }
 
-class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
+class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> with SingleTickerProviderStateMixin {
+  late final AnimationController _contentCtrl;
+  late final Animation<double> _contentFade;
+  late final Animation<Offset> _contentSlide;
+
   @override
   void initState() {
     super.initState();
+    _contentCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+    _contentFade = CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOut);
+    _contentSlide = Tween<Offset>(begin: const Offset(0, 0.12), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOut));
+    _contentCtrl.forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<CrowdProvider>().loadPrediction(widget.placeId);
     });
+  }
+
+  @override
+  void dispose() {
+    _contentCtrl.dispose();
+    super.dispose();
   }
 
   @override
@@ -33,11 +48,12 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
     final crowdProvider = context.watch<CrowdProvider>();
     final placeProvider = context.watch<PlaceProvider>();
     final favoritesProvider = context.watch<FavoritesProvider>();
-    
-    // In a real app, we'd fetch the place by ID if not selected
+
     final place = placeProvider.selectedPlace;
-    
+
     if (place == null) return const CrowdSenseLoading(isFullScreen: true);
+
+    final isFav = favoritesProvider.isFavorite(place.id);
 
     return Scaffold(
       body: CustomScrollView(
@@ -45,88 +61,144 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
           SliverAppBar(
             expandedHeight: 300,
             pinned: true,
+            stretch: true,
             flexibleSpace: FlexibleSpaceBar(
-              background: CachedNetworkImage(
-                imageUrl: place.thumbnailUrl ?? 'https://picsum.photos/seed/${place.id}/800/600',
-                fit: BoxFit.cover,
-                placeholder: (context, url) => Container(color: Colors.grey),
+              stretchModes: const [StretchMode.zoomBackground, StretchMode.fadeTitle],
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CachedNetworkImage(
+                    imageUrl: place.thumbnailUrl ?? '',
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(color: AppColors.surfaceVariant),
+                    errorWidget: (context, url, error) => Container(
+                      color: AppColors.surfaceVariant,
+                      child: const Icon(Icons.place_rounded, size: 60, color: AppColors.textHint),
+                    ),
+                  ),
+                  // Dark gradient for readability
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [Colors.black54, Colors.transparent],
+                        stops: [0, 0.6],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             actions: [
-              IconButton(
-                icon: Icon(
-                  favoritesProvider.isFavorite(place.id) ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                  color: favoritesProvider.isFavorite(place.id) ? Colors.red : Colors.white,
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: IconButton(
+                  key: ValueKey(isFav),
+                  icon: Icon(
+                    isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                    color: isFav ? Colors.red : Colors.white,
+                  ),
+                  onPressed: () async {
+                    await favoritesProvider.toggleFavorite(place);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(favoritesProvider.isFavorite(place.id)
+                              ? '❤️ Added to Favorites'
+                              : 'Removed from Favorites'),
+                          duration: const Duration(seconds: 1),
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                      );
+                    }
+                  },
                 ),
-                onPressed: () async {
-                  await favoritesProvider.toggleFavorite(place);
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(favoritesProvider.isFavorite(place.id) 
-                          ? 'Added to Favorites' 
-                          : 'Removed from Favorites'),
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
-                  }
-                },
               ),
-              IconButton(icon: const Icon(Icons.share_outlined, color: Colors.white), onPressed: () {}),
+              IconButton(
+                icon: const Icon(Icons.share_outlined, color: Colors.white),
+                onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Share link copied!'),
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    duration: const Duration(seconds: 1),
+                  ),
+                ),
+              ),
             ],
           ),
           SliverPadding(
             padding: const EdgeInsets.all(24.0),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(place.name, style: AppTextStyles.headlineLarge),
-                          const SizedBox(height: 4),
-                          Text(place.category ?? 'Point of Interest', style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary)),
-                        ],
-                      ),
+                FadeTransition(
+                  opacity: _contentFade,
+                  child: SlideTransition(
+                    position: _contentSlide,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(place.name, style: AppTextStyles.headlineLarge),
+                                  const SizedBox(height: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      place.category ?? 'Point of Interest',
+                                      style: AppTextStyles.labelLarge.copyWith(color: AppColors.primary),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on_rounded, size: 18, color: AppColors.textSecondary),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(place.displayName, style: AppTextStyles.bodyMedium)),
+                          ],
+                        ),
+                        const SizedBox(height: 32),
+                        _buildCrowdCard(crowdProvider),
+                        const SizedBox(height: 32),
+                        _buildForecastChart(crowdProvider),
+                        const SizedBox(height: 32),
+                        const Text('About', style: AppTextStyles.titleLarge),
+                        const SizedBox(height: 12),
+                        Text(place.relatedDescription, style: AppTextStyles.bodyLarge),
+                        const SizedBox(height: 32),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (context) => CrowdReportBottomSheet(placeId: place.id),
+                            );
+                          },
+                          icon: const Icon(Icons.report_gmailerrorred_rounded),
+                          label: const Text('Report Live Crowd Level'),
+                        ),
+                        const SizedBox(height: 100),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    const Icon(Icons.location_on_rounded, size: 18, color: AppColors.textSecondary),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(place.displayName, style: AppTextStyles.bodyMedium)),
-                  ],
-                ),
-                const SizedBox(height: 32),
-                _buildCrowdCard(crowdProvider),
-                const SizedBox(height: 32),
-                _buildForecastChart(crowdProvider),
-                const SizedBox(height: 32),
-                const Text('About', style: AppTextStyles.titleLarge),
-                const SizedBox(height: 12),
-                Text(
-                  place.relatedDescription,
-                  style: AppTextStyles.bodyLarge,
-                ),
-                const SizedBox(height: 32),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => CrowdReportBottomSheet(placeId: place.id),
-                    );
-                  },
-                  icon: const Icon(Icons.report_gmailerrorred_rounded),
-                  label: const Text('Report Live Crowd Level'),
-                ),
-                const SizedBox(height: 100),
               ]),
             ),
           ),
@@ -208,16 +280,19 @@ class _PlaceDetailsScreenState extends State<PlaceDetailsScreen> {
               final score = provider.hourlyForecast[index];
               final hour = index + 6; // Starts at 6 AM
               final isCurrentHour = DateTime.now().hour == hour;
+              final barColor = score > 65 ? AppColors.crowdHigh : score > 35 ? AppColors.crowdModerate : AppColors.crowdLow;
 
               return Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    Container(
+                    AnimatedContainer(
+                      duration: Duration(milliseconds: 400 + index * 30),
+                      curve: Curves.easeOut,
                       margin: const EdgeInsets.symmetric(horizontal: 2),
                       height: (score / 100) * 80,
                       decoration: BoxDecoration(
-                        color: isCurrentHour ? AppColors.primary : AppColors.primary.withOpacity(0.3),
+                        color: isCurrentHour ? barColor : barColor.withOpacity(0.35),
                         borderRadius: BorderRadius.circular(4),
                       ),
                     ),

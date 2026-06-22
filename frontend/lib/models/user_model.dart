@@ -9,6 +9,8 @@ class UserModel {
   final List<String> savedPlaces;
   final int totalReports;
   final DateTime joinedAt;
+  final String? phone;
+  final String? bio;
 
   const UserModel({
     required this.uid,
@@ -19,6 +21,8 @@ class UserModel {
     this.savedPlaces = const [],
     this.totalReports = 0,
     required this.joinedAt,
+    this.phone,
+    this.bio,
   });
 
   factory UserModel.fromFirestore(DocumentSnapshot doc) {
@@ -32,6 +36,8 @@ class UserModel {
       savedPlaces: List<String>.from(data['savedPlaces'] ?? []),
       totalReports: data['totalReports'] ?? 0,
       joinedAt: (data['joinedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      phone: data['phone'],
+      bio: data['bio'],
     );
   }
 
@@ -43,6 +49,8 @@ class UserModel {
     'savedPlaces': savedPlaces,
     'totalReports': totalReports,
     'joinedAt': joinedAt,
+    'phone': phone,
+    'bio': bio,
   };
 
   UserModel copyWith({
@@ -51,6 +59,8 @@ class UserModel {
     List<String>? uploadedPhotos,
     List<String>? savedPlaces,
     int? totalReports,
+    String? phone,
+    String? bio,
   }) {
     return UserModel(
       uid: uid,
@@ -61,6 +71,8 @@ class UserModel {
       savedPlaces: savedPlaces ?? this.savedPlaces,
       totalReports: totalReports ?? this.totalReports,
       joinedAt: joinedAt,
+      phone: phone ?? this.phone,
+      bio: bio ?? this.bio,
     );
   }
 }

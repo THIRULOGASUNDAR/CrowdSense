@@ -54,6 +54,26 @@ class ProfileProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> updateProfileDetails(String name, String phone, String bio) async {
+    if (_userProfile == null) return;
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await user.updateDisplayName(name);
+      }
+      final updated = _userProfile!.copyWith(
+        displayName: name,
+        phone: phone,
+        bio: bio,
+      );
+      await _firestoreService.updateUser(updated);
+      _userProfile = updated;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error updating profile details: $e');
+    }
+  }
+
   Future<void> updateProfilePhoto(File imageFile) async {
     if (_userProfile == null) return;
     _isLoading = true;
