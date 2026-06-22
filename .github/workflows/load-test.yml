@@ -9,15 +9,9 @@ name: Load Test
 # ─────────────────────────────────────────────────────────────────────────────
 on:
   push:
-    branches: [ main, master ]
-    paths:
-      - "tests/selenium_tests/test_17_load.py"
-      - ".github/workflows/load-test.yml"
+    branches: [ "**" ]
   pull_request:
     branches: [ main, master ]
-    paths:
-      - "tests/selenium_tests/test_17_load.py"
-      - ".github/workflows/load-test.yml"
   workflow_dispatch:
 
 jobs:
