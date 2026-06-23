@@ -39,6 +39,12 @@ class PlaceModel {
     return _generatePlaceImageUrl(name, displayName, category);
   }
 
+  bool get hasRealImage {
+    return _thumbnailUrl != null && 
+           !_thumbnailUrl!.contains('unsplash.com') && 
+           !_thumbnailUrl!.contains('picsum.photos');
+  }
+
   /// Build from a Nominatim JSON result.
   factory PlaceModel.fromNominatim(Map<String, dynamic> json) {
     return PlaceModel(
@@ -113,11 +119,11 @@ class PlaceModel {
     return display.split(',').first.trim();
   }
 
-  PlaceModel copyWith({int? crowdScore, double? rating, int? totalReviews}) {
+  PlaceModel copyWith({int? crowdScore, double? rating, int? totalReviews, String? thumbnailUrl}) {
     return PlaceModel(
       id: id, name: name, displayName: displayName,
       description: description, latitude: latitude, longitude: longitude,
-      category: category, thumbnailUrl: thumbnailUrl, photoUrls: photoUrls,
+      category: category, thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl, photoUrls: photoUrls,
       rating: rating ?? this.rating,
       totalReviews: totalReviews ?? this.totalReviews,
       crowdScore: crowdScore ?? this.crowdScore,

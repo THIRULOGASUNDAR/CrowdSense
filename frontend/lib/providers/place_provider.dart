@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/place_model.dart';
 import '../services/nominatim_service.dart';
 import '../services/firestore_service.dart';
+import '../services/wikipedia_service.dart';
 
 class PlaceProvider extends ChangeNotifier {
   final NominatimService _nominatimService = NominatimService();
@@ -88,6 +89,20 @@ class PlaceProvider extends ChangeNotifier {
       } finally {
         _isSearching = false;
         notifyListeners();
+        
+        // Async fetch real images from Wikipedia
+        for (var i = 0; i < _searchResults.length; i++) {
+          final p = _searchResults[i];
+          if (!p.hasRealImage) {
+            WikipediaService.fetchPlaceImageUrl(p.name).then((imageUrl) {
+              if (imageUrl != null) {
+                _searchResults[i] = p.copyWith(thumbnailUrl: imageUrl);
+                notifyListeners();
+                _firestoreService.upsertPlace(_searchResults[i]);
+              }
+            });
+          }
+        }
       }
     });
   }
@@ -116,6 +131,20 @@ class PlaceProvider extends ChangeNotifier {
         _trendingPlaces = uniquePlaces;
         _isTrendingLoading = false;
         notifyListeners();
+
+        // Async fetch real images from Wikipedia
+        for (var i = 0; i < _trendingPlaces.length; i++) {
+          final p = _trendingPlaces[i];
+          if (!p.hasRealImage) {
+            WikipediaService.fetchPlaceImageUrl(p.name).then((imageUrl) {
+              if (imageUrl != null) {
+                _trendingPlaces[i] = p.copyWith(thumbnailUrl: imageUrl);
+                notifyListeners();
+                _firestoreService.upsertPlace(_trendingPlaces[i]);
+              }
+            });
+          }
+        }
       },
       onError: (e) {
         final errorString = e.toString();
