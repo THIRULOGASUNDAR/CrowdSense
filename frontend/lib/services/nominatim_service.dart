@@ -34,6 +34,7 @@ class NominatimService {
         'namedetails':    '1',
         'limit':          limit.toString(),
         'dedupe':         '1',
+        'countrycodes':   'in',
       },
     );
 
