@@ -21,6 +21,7 @@ class _TravelPlannerScreenState extends State<TravelPlannerScreen> with SingleTi
   late final AnimationController _ctrl;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
+  final MapController _mapController = MapController();
 
   @override
   void initState() {
@@ -147,41 +148,88 @@ class _TravelPlannerScreenState extends State<TravelPlannerScreen> with SingleTi
                           BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 16, offset: const Offset(0, 6)),
                         ],
                       ),
-                      child: FlutterMap(
-                        options: MapOptions(
-                          initialCenter: LatLng(plan.destinationLat, plan.destinationLng),
-                          initialZoom: 13,
-                        ),
+                      child: Stack(
                         children: [
-                          TileLayer(
-                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.crowdsense.app',
-                          ),
-                          MarkerLayer(
-                            markers: [
-                              Marker(
-                                point: LatLng(plan.sourceLat, plan.sourceLng),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2),
-                                  ),
-                                  child: const Icon(Icons.trip_origin_rounded, color: Colors.white, size: 18),
-                                ),
+                          FlutterMap(
+                            mapController: _mapController,
+                            options: MapOptions(
+                              initialCameraFit: provider.routeCoordinates.isNotEmpty 
+                                  ? CameraFit.bounds(
+                                      bounds: LatLngBounds.fromPoints(provider.routeCoordinates),
+                                      padding: const EdgeInsets.all(40),
+                                    )
+                                  : null,
+                              initialCenter: LatLng(plan.destinationLat, plan.destinationLng),
+                              initialZoom: 13,
+                              interactionOptions: const InteractionOptions(
+                                flags: InteractiveFlag.all,
                               ),
-                              Marker(
-                                point: LatLng(plan.destinationLat, plan.destinationLng),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.error,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 2),
-                                  ),
-                                  child: const Icon(Icons.location_on_rounded, color: Colors.white, size: 18),
+                            ),
+                            children: [
+                              TileLayer(
+                                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                userAgentPackageName: 'com.crowdsense.app',
+                              ),
+                              if (provider.routeCoordinates.isNotEmpty)
+                                PolylineLayer(
+                                  polylines: [
+                                    Polyline(
+                                      points: provider.routeCoordinates,
+                                      color: AppColors.primary,
+                                      strokeWidth: 4.0,
+                                    ),
+                                  ],
                                 ),
+                              MarkerLayer(
+                                markers: [
+                                  Marker(
+                                    point: LatLng(plan.sourceLat, plan.sourceLng),
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.white, width: 2),
+                                      ),
+                                      child: const Icon(Icons.trip_origin_rounded, color: Colors.white, size: 18),
+                                    ),
+                                  ),
+                                  Marker(
+                                    point: LatLng(plan.destinationLat, plan.destinationLng),
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: AppColors.error,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.white, width: 2),
+                                      ),
+                                      child: const Icon(Icons.location_on_rounded, color: Colors.white, size: 18),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
+                          ),
+                          Positioned(
+                            right: 8,
+                            top: 8,
+                            child: Column(
+                              children: [
+                                _buildMapButton(
+                                  icon: Icons.add,
+                                  onTap: () {
+                                    final currentZoom = _mapController.camera.zoom;
+                                    _mapController.move(_mapController.camera.center, currentZoom + 1);
+                                  },
+                                ),
+                                const SizedBox(height: 8),
+                                _buildMapButton(
+                                  icon: Icons.remove,
+                                  onTap: () {
+                                    final currentZoom = _mapController.camera.zoom;
+                                    _mapController.move(_mapController.camera.center, currentZoom - 1);
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -192,6 +240,24 @@ class _TravelPlannerScreenState extends State<TravelPlannerScreen> with SingleTi
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMapButton({required IconData icon, required VoidCallback onTap}) {
+    return Material(
+      color: Colors.white,
+      elevation: 2,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          child: Icon(icon, size: 20, color: AppColors.textPrimary),
         ),
       ),
     );
