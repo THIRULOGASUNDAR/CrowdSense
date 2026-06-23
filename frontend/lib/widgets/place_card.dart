@@ -52,6 +52,7 @@ class _PlaceCardState extends State<PlaceCard> {
             child: InkWell(
               onTap: widget.onTap,
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Stack(

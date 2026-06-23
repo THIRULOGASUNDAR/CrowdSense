@@ -142,6 +142,13 @@ class FirestoreService {
     return UserModel.fromFirestore(doc);
   }
 
+  Stream<UserModel?> getUserStream(String uid) {
+    return _db.collection(AppConfig.usersCollection).doc(uid).snapshots().map((doc) {
+      if (!doc.exists) return null;
+      return UserModel.fromFirestore(doc);
+    });
+  }
+
   Future<void> updateUser(UserModel user) async {
     await _db.collection(AppConfig.usersCollection).doc(user.uid).update(user.toMap());
   }

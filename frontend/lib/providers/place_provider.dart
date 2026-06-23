@@ -83,18 +83,34 @@ class PlaceProvider extends ChangeNotifier {
     });
   }
 
+  StreamSubscription? _trendingSubscription;
+  int _retryCount = 0;
+
   Future<void> loadTrending() async {
     _isTrendingLoading = true;
+    _error = null;
     notifyListeners();
 
-    _firestoreService.getTrendingPlaces().listen(
+    await _trendingSubscription?.cancel();
+    _trendingSubscription = _firestoreService.getTrendingPlaces().listen(
       (places) {
+        _error = null;
+        _retryCount = 0;
         _trendingPlaces = places;
         _isTrendingLoading = false;
         notifyListeners();
       },
       onError: (e) {
-        _error = e.toString();
+        final errorString = e.toString();
+        // Handle transient permission denied on simultaneous logins (wait for auth to settle)
+        if (errorString.contains('permission-denied') && _retryCount < 3) {
+          _retryCount++;
+          Future.delayed(const Duration(seconds: 2), () {
+            loadTrending();
+          });
+          return;
+        }
+        _error = errorString;
         _isTrendingLoading = false;
         notifyListeners();
       },
@@ -160,6 +176,7 @@ class PlaceProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _trendingSubscription?.cancel();
     _debounce?.cancel();
     super.dispose();
   }

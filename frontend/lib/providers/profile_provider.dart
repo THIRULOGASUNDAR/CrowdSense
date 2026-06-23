@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_model.dart';
@@ -10,6 +11,7 @@ class ProfileProvider extends ChangeNotifier {
   final StorageService _storageService = StorageService();
   UserModel? _userProfile;
   bool _isLoading = false;
+  StreamSubscription<UserModel?>? _profileSubscription;
 
   UserModel? get userProfile => _userProfile;
   bool get isLoading => _isLoading;
@@ -19,23 +21,36 @@ class ProfileProvider extends ChangeNotifier {
       if (user != null) {
         loadProfile(user.uid);
       } else {
+        _profileSubscription?.cancel();
         _userProfile = null;
         notifyListeners();
       }
     });
   }
 
-  Future<void> loadProfile(String uid) async {
+  void loadProfile(String uid) {
     _isLoading = true;
     notifyListeners();
-    try {
-      _userProfile = await _firestoreService.getUser(uid);
-    } catch (e) {
-      debugPrint('Error loading profile: $e');
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+    
+    _profileSubscription?.cancel();
+    _profileSubscription = _firestoreService.getUserStream(uid).listen(
+      (profile) {
+        _userProfile = profile;
+        _isLoading = false;
+        notifyListeners();
+      },
+      onError: (e) {
+        debugPrint('Error loading profile stream: $e');
+        _isLoading = false;
+        notifyListeners();
+      }
+    );
+  }
+
+  @override
+  void dispose() {
+    _profileSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> updateDisplayName(String name) async {
