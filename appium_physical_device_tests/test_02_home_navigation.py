@@ -151,6 +151,7 @@ class TestHomeNavigation:
         ), "Trending Now section not found on Home screen"
 
     # PM027 — Home shows Popular Categories section
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_PM027_home_shows_categories_section(self, logged_in_driver):
         """Home screen must display a Popular Categories section."""
@@ -162,6 +163,7 @@ class TestHomeNavigation:
         ), "Popular Categories section not found on Home screen"
 
     # PM028 — Landmarks category chip visible
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_PM028_landmarks_category_chip(self, logged_in_driver):
         driver = logged_in_driver
@@ -172,6 +174,7 @@ class TestHomeNavigation:
         ), "Landmarks category chip not found"
 
     # PM029 — Restaurants category chip visible
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_PM029_restaurants_category_chip(self, logged_in_driver):
         driver = logged_in_driver
@@ -182,6 +185,7 @@ class TestHomeNavigation:
         ), "Restaurants category chip not found"
 
     # PM030 — Parks category chip visible
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_PM030_parks_category_chip(self, logged_in_driver):
         driver = logged_in_driver
@@ -192,6 +196,7 @@ class TestHomeNavigation:
         ), "Parks category chip not found"
 
     # PM031 — Shopping category chip visible
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_PM031_shopping_category_chip(self, logged_in_driver):
         driver = logged_in_driver
@@ -204,6 +209,7 @@ class TestHomeNavigation:
         ), "Shopping category chip not found"
 
     # PM032 — Entertainment category chip visible
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_PM032_entertainment_category_chip(self, logged_in_driver):
         driver = logged_in_driver

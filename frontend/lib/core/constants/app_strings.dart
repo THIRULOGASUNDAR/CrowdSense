@@ -12,7 +12,7 @@ class AppStrings {
   static const String signUp = "Sign Up";
   static const String searchHint = "Search places, parks, restaurants...";
   static const String trendingNow = "Trending Now";
-  static const String popularCategories = "Popular Categories";
+
   static const String recentSearches = "Recent Searches";
   static const String bestTimeToVisit = "Best Time to Visit";
   static const String crowdLevel = "Crowd Level";

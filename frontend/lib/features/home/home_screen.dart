@@ -40,10 +40,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
-  void _searchCategory(BuildContext context, String category) {
-    context.read<PlaceProvider>().searchPlaces(category);
-    context.go('/search-results');
-  }
+
 
   String _getGreeting() {
     final hour = DateTime.now().hour;
@@ -251,21 +248,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const _SectionHeader(title: 'Popular Categories'),
-                      const SizedBox(height: 16),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _CategoryChip(label: 'Landmarks', icon: '🏛️', onTap: () => _searchCategory(context, 'Landmarks')),
-                            _CategoryChip(label: 'Restaurants', icon: '🍽️', onTap: () => _searchCategory(context, 'Restaurants')),
-                            _CategoryChip(label: 'Parks', icon: '🌳', onTap: () => _searchCategory(context, 'Parks')),
-                            _CategoryChip(label: 'Shopping', icon: '🛍️', onTap: () => _searchCategory(context, 'Shopping')),
-                            _CategoryChip(label: 'Entertainment', icon: '🎭', onTap: () => _searchCategory(context, 'Entertainment')),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 32),
+
                       const _SectionHeader(title: 'Recent Searches'),
                       const SizedBox(height: 16),
                       provider.recentSearches.isEmpty
@@ -357,53 +340,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _CategoryChip extends StatefulWidget {
-  final String label;
-  final String icon;
-  final VoidCallback onTap;
 
-  const _CategoryChip({required this.label, required this.icon, required this.onTap});
-
-  @override
-  State<_CategoryChip> createState() => _CategoryChipState();
-}
-
-class _CategoryChipState extends State<_CategoryChip> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) {
-        setState(() => _pressed = false);
-        widget.onTap();
-      },
-      onTapCancel: () => setState(() => _pressed = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        margin: const EdgeInsets.only(right: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        transform: _pressed ? (Matrix4.identity()..scale(0.96)) : Matrix4.identity(),
-        decoration: BoxDecoration(
-          color: _pressed ? AppColors.primary.withOpacity(0.08) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _pressed ? AppColors.primary : AppColors.border),
-          boxShadow: _pressed
-              ? []
-              : [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-        ),
-        child: Row(
-          children: [
-            Text(widget.icon, style: const TextStyle(fontSize: 18)),
-            const SizedBox(width: 8),
-            Text(widget.label, style: AppTextStyles.labelLarge),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _RecentSearchChip extends StatelessWidget {
   final String label;

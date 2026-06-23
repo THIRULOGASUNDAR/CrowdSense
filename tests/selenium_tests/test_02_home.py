@@ -70,31 +70,37 @@ class TestHome:
         _nav(driver, "home")
         assert _flutter_loaded(_src(driver)) and _url_has(driver, "home", "login")
 
+    @pytest.mark.skip(reason="Popular Categories section intentionally removed")
     def test_tc031_home_popular_categories_section(self, driver):
         """TC031 — Home page shows a Popular Categories section."""
         _nav(driver, "home")
         assert _flutter_loaded(_src(driver)) and _url_has(driver, "home", "login")
 
+    @pytest.mark.skip(reason="Popular Categories section intentionally removed")
     def test_tc032_home_landmarks_category_chip(self, driver):
         """TC032 — Home page shows a Landmarks category chip."""
         _nav(driver, "home")
         assert _flutter_loaded(_src(driver)) and _url_has(driver, "home", "login")
 
+    @pytest.mark.skip(reason="Popular Categories section intentionally removed")
     def test_tc033_home_restaurants_category_chip(self, driver):
         """TC033 — Home page shows a Restaurants category chip."""
         _nav(driver, "home")
         assert _flutter_loaded(_src(driver)) and _url_has(driver, "home", "login")
 
+    @pytest.mark.skip(reason="Popular Categories section intentionally removed")
     def test_tc034_home_parks_category_chip(self, driver):
         """TC034 — Home page shows a Parks category chip."""
         _nav(driver, "home")
         assert _flutter_loaded(_src(driver)) and _url_has(driver, "home", "login")
 
+    @pytest.mark.skip(reason="Popular Categories section intentionally removed")
     def test_tc035_home_shopping_category_chip(self, driver):
         """TC035 — Home page shows a Shopping category chip."""
         _nav(driver, "home")
         assert _flutter_loaded(_src(driver)) and _url_has(driver, "home", "login")
 
+    @pytest.mark.skip(reason="Popular Categories section intentionally removed")
     def test_tc036_home_entertainment_category_chip(self, driver):
         """TC036 — Home page shows an Entertainment category chip."""
         _nav(driver, "home")

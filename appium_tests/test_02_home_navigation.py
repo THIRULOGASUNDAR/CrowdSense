@@ -89,6 +89,7 @@ class TestHomeNavigation:
         ), "Trending Now section not found on Home screen"
 
     # AM027 — Home shows Popular Categories section
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_AM027_home_shows_categories_section(self, logged_in_driver):
         """Home screen must display a Popular Categories section."""
@@ -100,6 +101,7 @@ class TestHomeNavigation:
         ), "Popular Categories section not found on Home screen"
 
     # AM028 — Landmarks category chip visible
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_AM028_landmarks_category_chip(self, logged_in_driver):
         """Home screen must show the Landmarks category chip/button."""
@@ -111,6 +113,7 @@ class TestHomeNavigation:
         ), "Landmarks category chip not found"
 
     # AM029 — Restaurants category chip visible
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_AM029_restaurants_category_chip(self, logged_in_driver):
         """Home screen must show the Restaurants category chip/button."""
@@ -122,6 +125,7 @@ class TestHomeNavigation:
         ), "Restaurants category chip not found"
 
     # AM030 — Parks category chip visible
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_AM030_parks_category_chip(self, logged_in_driver):
         """Home screen must show the Parks category chip/button."""
@@ -133,6 +137,7 @@ class TestHomeNavigation:
         ), "Parks category chip not found"
 
     # AM031 — Shopping category chip visible
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_AM031_shopping_category_chip(self, logged_in_driver):
         """Home screen must show the Shopping category chip/button."""
@@ -144,6 +149,7 @@ class TestHomeNavigation:
         ), "Shopping category chip not found"
 
     # AM032 — Entertainment category chip visible
+    @pytest.mark.skip(reason="Popular Categories removed")
     @pytest.mark.home
     def test_AM032_entertainment_category_chip(self, logged_in_driver):
         """Home screen must show the Entertainment category chip/button."""

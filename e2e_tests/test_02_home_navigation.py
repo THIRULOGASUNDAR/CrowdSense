@@ -88,31 +88,37 @@ class TestHomeNavigation:
         url = driver.current_url.lower()
         assert _is_flutter_loaded(_src(driver)) and ("home" in url or "login" in url)
 
+    @pytest.mark.skip(reason="Popular Categories section removed")
     def test_home_popular_categories_section(self, driver):
         _go(driver, "home")
         url = driver.current_url.lower()
         assert _is_flutter_loaded(_src(driver)) and ("home" in url or "login" in url)
 
+    @pytest.mark.skip(reason="Popular Categories section removed")
     def test_home_landmarks_category_chip(self, driver):
         _go(driver, "home")
         url = driver.current_url.lower()
         assert _is_flutter_loaded(_src(driver)) and ("home" in url or "login" in url)
 
+    @pytest.mark.skip(reason="Popular Categories section removed")
     def test_home_restaurants_category_chip(self, driver):
         _go(driver, "home")
         url = driver.current_url.lower()
         assert _is_flutter_loaded(_src(driver)) and ("home" in url or "login" in url)
 
+    @pytest.mark.skip(reason="Popular Categories section removed")
     def test_home_parks_category_chip(self, driver):
         _go(driver, "home")
         url = driver.current_url.lower()
         assert _is_flutter_loaded(_src(driver)) and ("home" in url or "login" in url)
 
+    @pytest.mark.skip(reason="Popular Categories section removed")
     def test_home_shopping_category_chip(self, driver):
         _go(driver, "home")
         url = driver.current_url.lower()
         assert _is_flutter_loaded(_src(driver)) and ("home" in url or "login" in url)
 
+    @pytest.mark.skip(reason="Popular Categories section removed")
     def test_home_entertainment_category_chip(self, driver):
         _go(driver, "home")
         url = driver.current_url.lower()
