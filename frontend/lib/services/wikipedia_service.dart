@@ -10,7 +10,7 @@ class WikipediaService {
     if (query.trim().isEmpty) return null;
     try {
       final encodedQuery = Uri.encodeComponent(query);
-      final url = Uri.parse('https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=$encodedQuery&gsrlimit=1&prop=pageimages&format=json&pithumbsize=600');
+      final url = Uri.parse('https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=$encodedQuery&gsrlimit=1&prop=pageimages&format=json&pithumbsize=600&origin=*');
       
       final response = await http.get(url, headers: {'User-Agent': _userAgent});
       if (response.statusCode == 200) {

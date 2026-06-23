@@ -166,8 +166,18 @@ class PlaceProvider extends ChangeNotifier {
   Future<void> selectPlace(PlaceModel place) async {
     _selectedPlace = place;
     notifyListeners();
-    // Also ensure it exists in Firestore for tracking
-    await _firestoreService.upsertPlace(place);
+    
+    if (!place.hasRealImage) {
+      WikipediaService.fetchPlaceImageUrl(place.name).then((imageUrl) {
+        if (imageUrl != null && _selectedPlace?.id == place.id) {
+          _selectedPlace = _selectedPlace!.copyWith(thumbnailUrl: imageUrl);
+          notifyListeners();
+          _firestoreService.upsertPlace(_selectedPlace!);
+        }
+      });
+    } else {
+      await _firestoreService.upsertPlace(place);
+    }
   }
 
   /// For testing: Add a few mock places to Firestore
