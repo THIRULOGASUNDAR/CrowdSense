@@ -33,7 +33,7 @@ class PlaceModel {
   }) : _thumbnailUrl = thumbnailUrl;
 
   String? get thumbnailUrl {
-    if (_thumbnailUrl != null && !_thumbnailUrl!.contains('picsum.photos')) {
+    if (_thumbnailUrl != null && _thumbnailUrl!.isNotEmpty && !_thumbnailUrl!.contains('unsplash.com')) {
       return _thumbnailUrl;
     }
     return _generatePlaceImageUrl(name, category);
@@ -126,49 +126,8 @@ class PlaceModel {
   }
 
   static String _generatePlaceImageUrl(String name, String? category) {
-    final cleanName = name.toLowerCase();
-    final cleanCat = (category ?? '').toLowerCase();
-
-    // Keyword check for specific famous landmarks
-    if (cleanName.contains('eiffel') || cleanName.contains('paris')) {
-      return 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanName.contains('central park')) {
-      return 'https://images.unsplash.com/photo-1518235506717-e1ed3306a89b?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanName.contains('london eye') || (cleanName.contains('london') && cleanCat.contains('tourism'))) {
-      return 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanName.contains('taj mahal') || cleanName.contains('agra')) {
-      return 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanName.contains('colosseum') || cleanName.contains('rome')) {
-      return 'https://images.unsplash.com/photo-1552832230-c0197dd311b5?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanName.contains('statue of liberty') || cleanName.contains('liberty island')) {
-      return 'https://images.unsplash.com/photo-1524008279394-3a9414322680?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanName.contains('opera house') || cleanName.contains('sydney')) {
-      return 'https://images.unsplash.com/photo-1506973035872-a4ec16b8e8d9?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanName.contains('fuji') || cleanName.contains('tokyo')) {
-      return 'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanName.contains('beach') || cleanName.contains('marina') || cleanName.contains('coast') || cleanName.contains('island')) {
-      return 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanName.contains('waterfall') || cleanName.contains('falls') || cleanName.contains('niagara')) {
-      return 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=600&auto=format&fit=crop&q=80';
-    }
-
-    // Category fallback check
-    if (cleanCat.contains('park') || cleanCat.contains('garden') || cleanCat.contains('nature') || cleanCat.contains('forest')) {
-      return 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanCat.contains('restaurant') || cleanCat.contains('cafe') || cleanCat.contains('food') || cleanCat.contains('bakery') || cleanCat.contains('bar') || cleanCat.contains('pub')) {
-      return 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanCat.contains('tourism') || cleanCat.contains('attraction') || cleanCat.contains('monument') || cleanCat.contains('landmark') || cleanCat.contains('historic')) {
-      return 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanCat.contains('museum') || cleanCat.contains('art') || cleanCat.contains('gallery') || cleanCat.contains('theatre')) {
-      return 'https://images.unsplash.com/photo-1574362848149-11496d93a7c7?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanCat.contains('shop') || cleanCat.contains('mall') || cleanCat.contains('store') || cleanCat.contains('supermarket')) {
-      return 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanCat.contains('hotel') || cleanCat.contains('motel') || cleanCat.contains('resort') || cleanCat.contains('apartment')) {
-      return 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&auto=format&fit=crop&q=80';
-    } else if (cleanCat.contains('station') || cleanCat.contains('airport') || cleanCat.contains('railway') || cleanCat.contains('subway') || cleanCat.contains('bus')) {
-      return 'https://images.unsplash.com/photo-1474487548417-781cb71495f3?w=600&auto=format&fit=crop&q=80';
-    }
-
-    return 'https://images.unsplash.com/photo-1472214222555-d404758b1c42?w=600&auto=format&fit=crop&q=80';
+    // Using picsum.photos API for easy, consistent placeholder images without CORS issues or 404s
+    final seed = Uri.encodeComponent(name.replaceAll(' ', '').toLowerCase());
+    return 'https://picsum.photos/seed/$seed/600/400';
   }
 }
