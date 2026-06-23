@@ -73,7 +73,16 @@ class PlaceProvider extends ChangeNotifier {
       notifyListeners();
 
       try {
-        _searchResults = await _nominatimService.searchPlaces(query);
+        final results = await _nominatimService.searchPlaces(query);
+        final uniquePlaces = <PlaceModel>[];
+        final seenNames = <String>{};
+        for (final p in results) {
+          if (!seenNames.contains(p.name)) {
+            uniquePlaces.add(p);
+            seenNames.add(p.name);
+          }
+        }
+        _searchResults = uniquePlaces;
       } catch (e) {
         _error = e.toString();
       } finally {
@@ -96,7 +105,15 @@ class PlaceProvider extends ChangeNotifier {
       (places) {
         _error = null;
         _retryCount = 0;
-        _trendingPlaces = places;
+        final uniquePlaces = <PlaceModel>[];
+        final seenNames = <String>{};
+        for (final p in places) {
+          if (!seenNames.contains(p.name)) {
+            uniquePlaces.add(p);
+            seenNames.add(p.name);
+          }
+        }
+        _trendingPlaces = uniquePlaces;
         _isTrendingLoading = false;
         notifyListeners();
       },
