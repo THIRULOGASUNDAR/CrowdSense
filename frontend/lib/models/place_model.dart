@@ -36,7 +36,7 @@ class PlaceModel {
     if (_thumbnailUrl != null && !_thumbnailUrl!.contains('picsum.photos') && !_thumbnailUrl!.contains('photo-1524008279394') && !_thumbnailUrl!.contains('photo-1472214222555')) {
       return _thumbnailUrl;
     }
-    return _generatePlaceImageUrl(name, category);
+    return _generatePlaceImageUrl(name, displayName, category);
   }
 
   /// Build from a Nominatim JSON result.
@@ -125,9 +125,12 @@ class PlaceModel {
     );
   }
 
-  static String _generatePlaceImageUrl(String name, String? category) {
+  static String _generatePlaceImageUrl(String name, String displayName, String? category) {
     final cleanName = name.toLowerCase();
     final cleanCat = (category ?? '').toLowerCase();
+    final hash = (name + displayName).hashCode.abs();
+    
+    String pick(List<String> urls) => urls[hash % urls.length];
 
     // Keyword check for specific famous landmarks
     if (cleanName.contains('eiffel') || cleanName.contains('paris')) {
@@ -152,13 +155,26 @@ class PlaceModel {
       return 'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=600&auto=format&fit=crop&q=80';
     }
 
-    // Category fallback check
+    // Category fallback check with lists for uniqueness
     if (cleanCat.contains('park') || cleanName.contains('park') || cleanCat.contains('garden') || cleanCat.contains('nature') || cleanCat.contains('forest')) {
-      return 'https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&auto=format&fit=crop&q=80';
+      return pick([
+        'https://images.unsplash.com/photo-1448375240586-882707db888b?w=600&auto=format&fit=crop&q=80',
+        'https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=600&auto=format&fit=crop&q=80',
+        'https://images.unsplash.com/photo-1473448912268-2022ce9509d8?w=600&auto=format&fit=crop&q=80'
+      ]);
     } else if (cleanCat.contains('restaurant') || cleanName.contains('restaurant') || cleanCat.contains('cafe') || cleanName.contains('cafe') || cleanName.contains('coffee') || cleanCat.contains('food') || cleanCat.contains('bakery') || cleanCat.contains('bar') || cleanCat.contains('pub')) {
-      return 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&auto=format&fit=crop&q=80';
+      return pick([
+        'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&auto=format&fit=crop&q=80',
+        'https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=600&auto=format&fit=crop&q=80',
+        'https://images.unsplash.com/photo-1498654896293-37aacf113fd9?w=600&auto=format&fit=crop&q=80',
+        'https://images.unsplash.com/photo-1559925393-8be0ec4767c8?w=600&auto=format&fit=crop&q=80'
+      ]);
     } else if (cleanCat.contains('tourism') || cleanCat.contains('attraction') || cleanCat.contains('monument') || cleanCat.contains('landmark') || cleanCat.contains('historic')) {
-      return 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=600&auto=format&fit=crop&q=80';
+      return pick([
+        'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=600&auto=format&fit=crop&q=80',
+        'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=600&auto=format&fit=crop&q=80',
+        'https://images.unsplash.com/photo-1523906834658-6e24ef2386f9?w=600&auto=format&fit=crop&q=80'
+      ]);
     } else if (cleanCat.contains('museum') || cleanCat.contains('art') || cleanCat.contains('gallery') || cleanCat.contains('theatre')) {
       return 'https://images.unsplash.com/photo-1574362848149-11496d93a7c7?w=600&auto=format&fit=crop&q=80';
     } else if (cleanCat.contains('shop') || cleanCat.contains('mall') || cleanCat.contains('store') || cleanCat.contains('supermarket')) {
@@ -169,6 +185,10 @@ class PlaceModel {
       return 'https://images.unsplash.com/photo-1474487548417-781cb71495f3?w=600&auto=format&fit=crop&q=80';
     }
 
-    return 'https://images.unsplash.com/photo-1449844908441-8829872d2607?w=600&auto=format&fit=crop&q=80';
+    return pick([
+      'https://images.unsplash.com/photo-1449844908441-8829872d2607?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=600&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1514565131-fce0801e5785?w=600&auto=format&fit=crop&q=80'
+    ]);
   }
 }

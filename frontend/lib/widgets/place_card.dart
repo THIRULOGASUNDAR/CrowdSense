@@ -123,22 +123,7 @@ class _PlaceCardState extends State<PlaceCard> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Icon(Icons.star_rounded, size: 16, color: Colors.amber),
-                            const SizedBox(width: 4),
-                            Text(
-                              widget.place.rating.toStringAsFixed(1),
-                              style: AppTextStyles.labelLarge.copyWith(fontSize: 12),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '(${widget.place.totalReviews})',
-                              style: AppTextStyles.bodySmall,
-                            ),
-                          ],
-                        ),
+                        // Removed ratings row as requested
                       ],
                     ),
                   ),
