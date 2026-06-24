@@ -18,12 +18,14 @@ class CrowdPrediction {
   final CrowdLevel level;
   final String bestTimeToVisit;
   final String description;
+  final int baseline;
 
   const CrowdPrediction({
     required this.score,
     required this.level,
     required this.bestTimeToVisit,
     required this.description,
+    this.baseline = 50,
   });
 }
 
@@ -36,6 +38,7 @@ class CrowdPredictor {
     required DateTime dateTime,
     required List<int> recentReports,
     int historicalBaseline = 50,
+    String? bestTimeToVisit,
   }) {
     // 1. Time-of-day factor (0–100)
     final int timeScore = _timeOfDayScore(dateTime.hour);
@@ -48,21 +51,31 @@ class CrowdPredictor {
         ? historicalBaseline.toDouble()
         : recentReports.reduce((a, b) => a + b) / recentReports.length;
 
-    // 4. Weighted composite score
-    final int score = ((timeScore * 0.35) +
-                       (dayScore  * 0.25) +
-                       (reportAvg * 0.40))
-        .round()
-        .clamp(0, 100);
+    int score;
+    if (recentReports.isNotEmpty) {
+      // If we have live reports, they are the most accurate source of truth.
+      // Re-normalize historical factors (time 58%, day 42% relative to each other)
+      final double historicalFactor = (timeScore * 0.58) + (dayScore * 0.42);
+      // Give 80% weight to real-time reports, 20% to historical expectation
+      score = ((historicalFactor * 0.20) + (reportAvg * 0.80)).round().clamp(0, 100);
+    } else {
+      // 4. Weighted composite score using standard baseline
+      score = ((timeScore * 0.35) +
+                         (dayScore  * 0.25) +
+                         (reportAvg * 0.40))
+          .round()
+          .clamp(0, 100);
+    }
 
     final CrowdLevel level = _scoreToLevel(score);
-    final String best      = _bestTime(dateTime.weekday);
+    final String best      = bestTimeToVisit ?? _bestTime(dateTime.weekday);
 
     return CrowdPrediction(
       score: score,
       level: level,
       bestTimeToVisit: best,
       description: _description(level),
+      baseline: historicalBaseline,
     );
   }
 
@@ -70,16 +83,26 @@ class CrowdPredictor {
   static List<int> predictDayForecast({
     required int weekday,
     required List<int> recentReports,
+    int historicalBaseline = 50,
   }) {
     List<int> forecast = [];
     for (int hour = 6; hour <= 23; hour++) {
       final dateTime = DateTime(2024, 1, 1, hour); // Date doesn't matter, only hour/weekday
+      // Use the provided weekday instead of dateTime.weekday because dateTime is hardcoded to 2024-01-01 (Monday)
+      // Actually, predict uses dateTime.weekday, so we should construct a DateTime with the correct weekday!
+      final targetDate = _getDateForWeekday(weekday, hour);
       forecast.add(predict(
-        dateTime: dateTime,
+        dateTime: targetDate,
         recentReports: recentReports,
+        historicalBaseline: historicalBaseline,
       ).score);
     }
     return forecast;
+  }
+
+  static DateTime _getDateForWeekday(int weekday, int hour) {
+    // 2024-01-01 is a Monday (weekday 1)
+    return DateTime(2024, 1, weekday, hour);
   }
 
   static int _timeOfDayScore(int hour) {

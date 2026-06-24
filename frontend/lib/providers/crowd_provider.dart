@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/crowd_report_model.dart';
@@ -13,6 +14,7 @@ class CrowdProvider extends ChangeNotifier {
   List<int> _hourlyForecast = [];
   List<CrowdReportModel> _recentReports = [];
   bool _isLoading = false;
+  StreamSubscription<List<CrowdReportModel>>? _reportsSubscription;
 
   CrowdPrediction? get currentPrediction => _currentPrediction;
   List<int> get hourlyForecast => _hourlyForecast;
@@ -26,14 +28,29 @@ class CrowdProvider extends ChangeNotifier {
     try {
       _currentPrediction = await _predictionService.getPrediction(placeId);
       
+      // Cancel previous subscription to avoid memory leaks and multiple listeners
+      await _reportsSubscription?.cancel();
+
       // Load recent reports stream
-      _firestoreService.getRecentReports(placeId).listen((reports) {
+      _reportsSubscription = _firestoreService.getRecentReports(placeId).listen((reports) {
         _recentReports = reports;
+        final scores = reports.map((r) => r.level.score).toList();
+
+        // Update the current prediction locally when new reports arrive
+        if (_currentPrediction != null) {
+          _currentPrediction = CrowdPredictor.predict(
+            dateTime: DateTime.now(),
+            recentReports: scores,
+            historicalBaseline: _currentPrediction!.baseline,
+            bestTimeToVisit: _currentPrediction!.bestTimeToVisit,
+          );
+        }
         
-        // Generate hourly forecast based on reports
+        // Generate hourly forecast based on reports using the same dynamic baseline
         _hourlyForecast = CrowdPredictor.predictDayForecast(
           weekday: DateTime.now().weekday,
-          recentReports: reports.map((r) => r.level.score).toList(),
+          recentReports: scores,
+          historicalBaseline: _currentPrediction?.baseline ?? 50,
         );
 
         notifyListeners();
@@ -62,10 +79,16 @@ class CrowdProvider extends ChangeNotifier {
 
     try {
       await _firestoreService.submitCrowdReport(report);
-      // Refresh prediction
-      await loadPrediction(placeId);
+      // Removed await loadPrediction(placeId); here since the stream listener will automatically
+      // receive the new report and update the UI accordingly.
     } catch (e) {
       debugPrint('Error submitting report: $e');
     }
+  }
+
+  @override
+  void dispose() {
+    _reportsSubscription?.cancel();
+    super.dispose();
   }
 }

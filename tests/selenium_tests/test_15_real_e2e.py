@@ -23,12 +23,8 @@ BASE_URL = "https://thirulogasundar.github.io/CrowdSense"
 _TEST_EMAIL    = os.environ.get("TEST_EMAIL", "thiru@gmail.com")
 _TEST_PASSWORD = os.environ.get("TEST_PASSWORD", "thiru005")
 
-# Skip only when running in CI without the secrets configured.
-# Once TEST_EMAIL secret is added to the repo, these tests will run in CI.
-pytestmark = pytest.mark.skipif(
-    bool(os.environ.get("CI")) and not os.environ.get("TEST_EMAIL"),
-    reason="Authenticated E2E tests skipped in CI — add TEST_EMAIL and TEST_PASSWORD as GitHub Secrets to enable.",
-)
+# Use fallback credentials even in CI if secrets are not configured.
+# pytestmark removed to ensure 100% test execution in CI workflows.
 
 
 def _enable_semantics(driver):
